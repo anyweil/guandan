@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="掼蛋">
+<meta name="theme-color" content="#0f6b46">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="全国竞技规则掼蛋，离线可玩的人机对战 H5。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<title>掼蛋 · Guandan（离线版）</title>
+<style>
+  :root{ --felt:#0f6b46; --felt2:#0a4d33; --ink:#1c2230; --red:#d23b34; --gold:#e8c66b;
+    --chip:#0b3d29; --line:rgba(255,255,255,.14); --sel:#ffd34d; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(120% 80% at 50% -10%,#1aa06a 0%,var(--felt) 42%,var(--felt2) 100%);
+    color:#eaf3ee;display:flex;flex-direction:column;height:100%}
+  /* 顶栏 */
+  .top{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:13px;flex:none}
+  .top .ttl{font-weight:800;letter-spacing:2px} .top .ttl .s{color:var(--gold)}
+  .hud{display:flex;gap:10px;align-items:center;font-size:12px}
+  .hud .lv{background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:8px;padding:3px 9px}
+  .hud .lv b{color:var(--gold)}
+  .icon{background:rgba(255,255,255,.12);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px}
+  /* 牌桌 */
+  .table{position:relative;flex:1;min-height:0}
+  .seat{position:absolute;background:rgba(0,0,0,.30);border:1px solid var(--line);border-radius:10px;
+    padding:6px 10px;text-align:center;min-width:84px;transition:box-shadow .2s}
+  .seat .nm{font-weight:700;font-size:12.5px} .seat .sub{font-size:10.5px;color:#a9c6ba;margin-top:1px}
+  .seat .ct{color:var(--gold);font-size:12px;margin-top:2px}
+  .seat.turn{box-shadow:0 0 0 2px var(--gold),0 0 16px rgba(232,198,107,.5)}
+  .seat.out{opacity:.5}
+  .seat .rank{font-size:10px;color:#ffd;margin-top:1px}
+  .seat-N{top:6px;left:50%;transform:translateX(-50%)}
+  .seat-E{right:6px;top:46%;transform:translateY(-50%)}
+  .seat-W{left:6px;top:46%;transform:translateY(-50%)}
+  .seat-S{bottom:6px;left:8px}
+  /* 中央出牌区 */
+  .play{position:absolute;display:flex;gap:3px;justify-content:center;align-items:center;min-height:46px;flex-wrap:wrap;max-width:46%}
+  .play-N{top:64px;left:50%;transform:translateX(-50%)}
+  .play-E{right:96px;top:46%;transform:translateY(-50%)}
+  .play-W{left:96px;top:46%;transform:translateY(-50%)}
+  .play-S{bottom:84px;left:50%;transform:translateX(-50%)}
+  .pass-tag{background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:20px;padding:2px 12px;font-size:12px;color:#ffd9d4}
+  .mid{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#bfe0d0;font-size:12.5px;opacity:.92;pointer-events:none}
+  .mid .big{font-size:15px;color:#eaf3ee;font-weight:700}
+  /* 牌：真实扑克牌样式（左上+右下双角标 + 中央花色符号） */
+  .card{position:relative;overflow:hidden;background:#fff;color:#1c2230;border:1px solid #c7ccd6;border-radius:7px;
+    box-shadow:0 1px 3px rgba(0,0,0,.32);font-weight:700}
+  .card.red{color:var(--red)}
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.9;font-weight:800;z-index:1}
+  .card .corner b{font-size:13px} .card .corner i{font-style:normal;font-size:11px;margin-top:1px}
+  .card .corner.tl{top:3px;left:3px} .card .corner.br{bottom:3px;right:3px;transform:rotate(180deg)}
+  .card .pip{position:absolute;top:53%;left:50%;transform:translate(-50%,-50%);font-size:15px;opacity:.95}
+  .card.lv{outline:2px solid var(--gold);outline-offset:-2px}
+  .card.wild{outline:2px solid var(--gold);outline-offset:-2px;background:linear-gradient(165deg,#fffdf4,#fff2cb)}
+  /* 大小王 */
+  .card.joker.big{color:var(--red)} .card.joker.small{color:#2a2f3a}
+  .card.joker .corner{font-size:11px;font-weight:800} .card.joker .pip{font-size:18px;top:46%}
+  .card .jlb{position:absolute;left:0;right:0;bottom:4px;text-align:center;font-size:9px;font-weight:800;letter-spacing:2px}
+  /* 出牌区小牌 */
+  .card.mini{width:27px;height:38px}
+  .card.mini .corner.br{display:none} .card.mini .corner b{font-size:11px} .card.mini .corner i{font-size:9px}
+  .card.mini .pip{font-size:12px} .card.mini .jlb{font-size:7px;letter-spacing:1px}
+  /* 手牌区 */
+  .bottom{flex:none;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(0,0,0,.22)}
+  .hand{display:flex;justify-content:center;flex-wrap:wrap;gap:3px;min-height:64px;padding:2px}
+  .hand .card{width:43px;height:61px;cursor:pointer;transition:transform .12s}
+  .hand .card .corner b{font-size:14.5px} .hand .card .corner i{font-size:12px}
+  .hand .card .pip{font-size:18px} .hand .card .jlb{font-size:10px}
+  .hand .card.sel{transform:translateY(-12px);outline:2px solid var(--sel);box-shadow:0 4px 10px rgba(0,0,0,.4)}
+  /* 理牌：每个牌型一列纵向叠放 */
+  .hand.grouped{align-items:flex-start;gap:6px 8px;max-height:46vh;overflow-y:auto;padding:6px 2px}
+  .hand.grouped .col{display:flex;flex-direction:column;align-items:center}
+  .hand.grouped .col .card + .card{margin-top:-31px}   /* 露出 ~30px：左上角标完整可见 */
+  .hand.grouped .card.sel{transform:translateX(11px);z-index:50;box-shadow:0 2px 12px rgba(0,0,0,.5)}
+  @media(max-width:420px){ .hand.grouped .col .card + .card{margin-top:-25px} }
+  .bar{display:flex;gap:8px;justify-content:center;margin-top:6px}
+  .bar.util{margin-top:4px;gap:10px}
+  .util-btn{background:rgba(255,255,255,.14);color:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
+  .util-btn.on{background:var(--gold);color:#3a2c06;border-color:var(--gold)}
+  .play .card.mini{animation:pop .22s ease-out}
+  @keyframes pop{from{opacity:0;transform:translateY(-7px) scale(.9)}to{opacity:1;transform:none}}
+  .bar button{font:inherit;font-weight:700;border:none;border-radius:9px;padding:9px 18px;font-size:14px;cursor:pointer}
+  .bar .play-btn{background:var(--gold);color:#3a2c06}
+  .bar .pass-btn{background:#c44;color:#fff}
+  .bar .hint-btn{background:rgba(255,255,255,.16);color:#fff}
+  .bar button:disabled{opacity:.4;cursor:not-allowed}
+  .turnhint{text-align:center;font-size:12px;color:#cfe7db;height:16px;margin-top:2px}
+  /* 弹层 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:30;padding:18px}
+  .mask.show{display:flex}
+  .panel{background:#12362a;border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;max-width:380px;width:100%;color:#eaf3ee}
+  .panel h2{margin:0 0 12px;font-size:18px;color:var(--gold)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0;font-size:14px}
+  .row select{font:inherit;border-radius:8px;border:1px solid var(--line);background:#0b3d29;color:#fff;padding:6px 10px;font-size:14px}
+  .panel .pbtn{width:100%;margin-top:14px;border:none;border-radius:10px;padding:11px;font-size:15px;font-weight:800;background:var(--gold);color:#3a2c06;cursor:pointer}
+  .panel .pbtn.ghost{background:rgba(255,255,255,.14);color:#fff;margin-top:8px}
+  .res-list{font-size:14px;line-height:2} .res-list .me{color:var(--gold);font-weight:700}
+  .toast{position:fixed;left:50%;bottom:24%;transform:translateX(-50%);background:rgba(0,0,0,.8);
+    border:1px solid var(--line);border-radius:10px;padding:9px 16px;font-size:13px;z-index:40;opacity:0;transition:opacity .25s;pointer-events:none;max-width:80%;text-align:center}
+  .toast.show{opacity:1}
+  @media(max-width:420px){ .hand .card{width:37px;height:53px} .hand .card .corner b{font-size:12.5px} .hand .card .corner i{font-size:10.5px} .hand .card .pip{font-size:15px} .seat{min-width:70px;padding:5px 7px} }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="ttl">掼 蛋 <span class="s">· Guandan</span></div>
+  <div class="hud">
+    <div class="lv" id="hudno">第 1 局</div>
+    <div class="lv" id="hudlv">本局打 <b>2</b></div>
+    <div class="lv" id="hudteam">我方 2 · 对方 2</div>
+    <div class="icon" id="gear">⚙ 设置</div>
+  </div>
+</div>
+
+<div class="table" id="tablearea">
+  <!-- 座位 -->
+  <div class="seat seat-N" id="seatN"><div class="nm">对家(队友)</div><div class="sub" id="diffN">高级</div><div class="ct" id="ctN">27</div><div class="rank" id="rkN"></div></div>
+  <div class="seat seat-E" id="seatE"><div class="nm">下家(对手)</div><div class="sub" id="diffE">中级</div><div class="ct" id="ctE">27</div><div class="rank" id="rkE"></div></div>
+  <div class="seat seat-W" id="seatW"><div class="nm">上家(对手)</div><div class="sub" id="diffW">中级</div><div class="ct" id="ctW">27</div><div class="rank" id="rkW"></div></div>
+  <div class="seat seat-S" id="seatS"><div class="nm">我</div><div class="sub">玩家</div><div class="ct" id="ctS">27</div><div class="rank" id="rkS"></div></div>
+  <!-- 出牌区 -->
+  <div class="play play-N" id="playN"></div>
+  <div class="play play-E" id="playE"></div>
+  <div class="play play-W" id="playW"></div>
+  <div class="play play-S" id="playS"></div>
+  <div class="mid" id="mid"></div>
+</div>
+
+<div class="bottom">
+  <div class="hand" id="hand"></div>
+  <div class="bar util">
+    <button class="util-btn" id="btnSort">🎴 理牌</button>
+    <button class="util-btn" id="btnAuto">🤖 托管</button>
+  </div>
+  <div class="bar">
+    <button class="hint-btn" id="btnHint">提示</button>
+    <button class="pass-btn" id="btnPass">不要</button>
+    <button class="play-btn" id="btnPlay">出牌</button>
+  </div>
+  <div class="turnhint" id="turnhint"></div>
+</div>
+
+<!-- 设置 -->
+<div class="mask" id="setmask">
+  <div class="panel">
+    <h2>设置 / 新对局</h2>
+    <div class="row"><span>对家(队友) 水平</span><select id="selN"></select></div>
+    <div class="row"><span>下家(右·对手) 水平</span><select id="selE"></select></div>
+    <div class="row"><span>上家(左·对手) 水平</span><select id="selW"></select></div>
+    <div class="row"><span>起始级牌（打几）</span><select id="selLv"></select></div>
+    <button class="pbtn" id="btnNewMatch">开始新整场</button>
+    <button class="pbtn ghost" id="btnClose">关闭</button>
+  </div>
+</div>
+
+<!-- 结算 -->
+<div class="mask" id="resmask">
+  <div class="panel">
+    <h2 id="resttl">本局结算</h2>
+    <div class="res-list" id="reslist"></div>
+    <button class="pbtn" id="btnNext">下一局</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="src/engine/engine.js"></script>
+<script src="src/game/game.js"></script>
+<script src="src/ai/ai.js"></script>
+<script src="src/ui/ui.js"></script>
+<script>
+  /* PWA：仅在 http(s) 下注册 SW；file:// 双击离线版照常运行，不报错。 */
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
