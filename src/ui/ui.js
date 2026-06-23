@@ -177,6 +177,7 @@
     D.hands[seat] = D.hands[seat].filter(c => !ids.has(c.id));
     D.current = combo; D.currentOwner = seat; D.passes = 0;
     for (const c of cards) D.played.push(c);
+    D.playLog.push({ seat, cards: cards.slice() });
     D.lastPlayed[seat] = { cards: cards.slice(), combo };
     if (D.hands[seat].length === 0) {
       D.finished.push(seat); D.active[seat] = false;
@@ -210,7 +211,7 @@
     const seat = D.turn;
     if (!D.active[seat]) return;
     let decide;
-    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('高级')); }
+    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('大师')); }
     else decide = M.ais[seat] || AI.makeAI(M.diff[seat]);
     let move;
     try { move = decide(D, seat); } catch (e) { move = 'pass'; }
@@ -236,7 +237,7 @@
       tributeMsg = describeTribute(tr);
     }
     D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
-      finished: [], active: [true, true, true, true], played: [], lastPlayed: [null, null, null, null], phase: 'playing' };
+      finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null], phase: 'playing' };
     sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();

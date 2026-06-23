@@ -66,7 +66,8 @@
       level, hands: hands.map(h => h.slice()), turn: leader,
       current: null, currentOwner: null, passes: 0,
       finished: [], active: [true, true, true, true], log: [],
-      played: []   // 公共信息：已打出的所有牌（AI 记牌用）
+      played: [],   // 公共信息：已打出的所有牌（AI 记牌用）
+      playLog: []   // 公共信息：每手 {seat, cards}（宗师"记得谁出的"用）
     };
     let guard = 0;
     while (activeCount(state) > 1) {
@@ -97,6 +98,7 @@
       removeCards(state.hands[seat], move);
       state.current = combo; state.currentOwner = seat; state.passes = 0;
       for (const c of move) state.played.push(c);
+      state.playLog.push({ seat, cards: move.slice() });
       state.log.push({ seat, type: combo.type, key: combo.key, n: move.length });
       if (state.hands[seat].length === 0) {
         state.finished.push(seat); state.active[seat] = false;

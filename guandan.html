@@ -553,7 +553,8 @@
       level, hands: hands.map(h => h.slice()), turn: leader,
       current: null, currentOwner: null, passes: 0,
       finished: [], active: [true, true, true, true], log: [],
-      played: []   // 公共信息：已打出的所有牌（AI 记牌用）
+      played: [],   // 公共信息：已打出的所有牌（AI 记牌用）
+      playLog: []   // 公共信息：每手 {seat, cards}（宗师"记得谁出的"用）
     };
     let guard = 0;
     while (activeCount(state) > 1) {
@@ -584,6 +585,7 @@
       removeCards(state.hands[seat], move);
       state.current = combo; state.currentOwner = seat; state.passes = 0;
       for (const c of move) state.played.push(c);
+      state.playLog.push({ seat, cards: move.slice() });
       state.log.push({ seat, type: combo.type, key: combo.key, n: move.length });
       if (state.hands[seat].length === 0) {
         state.finished.push(seat); state.active[seat] = false;
@@ -852,139 +854,184 @@
     return m.filter(x => GD.beats(x.combo, top, level));
   }
 
-  // ---------- 评估：估计“手数”（越少越接近打完） ----------
-  function handScore(cards, level) {
-    const cnt = {}; let wild = 0;
+  // ---------- 手数估计：越少越接近走完（核心目标） ----------
+  function estPlays(cards, level) {
+    let wild = 0; const counts = {}, nat = {};
     for (const c of cards) {
       if (GD.isWild(c, level)) { wild++; continue; }
-      const v = GD.isJoker(c) ? (c.rank === GD.BIG ? 17 : 16) : GD.naturalRank(c.rank);
-      cnt[v] = (cnt[v] || 0) + 1;
+      const p = GD.powerOfCard(c, level);
+      counts[p] = (counts[p] || 0) + 1;
+      if (!GD.isJoker(c) && c.rank !== level) { const v = GD.naturalRank(c.rank); nat[v] = (nat[v] || 0) + 1; }
     }
-    let plays = 0; const singles = [];
-    for (const v in cnt) { plays++; if (cnt[v] === 1) singles.push(+v); }
-    singles.sort((a, b) => a - b);
-    let run = 1, bonus = 0;
-    for (let i = 1; i < singles.length; i++) {
-      if (singles[i] === singles[i - 1] + 1) { run++; if (run >= 5) { bonus++; run = 1; } } else run = 1;
-    }
-    return plays - bonus * 3 - wild * 0.1;
+    let plays = Object.keys(counts).length;                 // 每个点数≥1手
+    // 顺子奖励：连续自然单点长≥5 合并为1手（省 len-1）
+    const sv = []; for (const v in nat) sv.push(+v); sv.sort((a, b) => a - b);
+    let run = 0, prev = -9;
+    for (const v of sv) { run = (v === prev + 1) ? run + 1 : 1; prev = v; if (run >= 5) { plays -= 4; run = 0; prev = -9; } }
+    // 连对奖励：连续点(每点≥2)长≥3 合并
+    const pv = []; for (const v in nat) if (nat[v] >= 2) pv.push(+v); pv.sort((a, b) => a - b);
+    run = 0; prev = -9;
+    for (const v of pv) { run = (v === prev + 1) ? run + 1 : 1; prev = v; if (run >= 3) { plays -= 2; run = 0; prev = -9; } }
+    return Math.max(1, plays - wild * 0.2);
   }
+  const handScore = estPlays;   // 兼容旧 API 名
   function removeSig(hand, cards) { const ids = new Set(cards.map(c => c.id)); return hand.filter(c => !ids.has(c.id)); }
-
-  // ---------- 记牌：某点数还剩多少未现身（不含我手牌、不含已出牌） ----------
-  function remainingHigherSingles(hand, level, state, seat, myKey) {
-    // 估计场上比 myKey 更大的“单牌威胁”数量（粗略，用于判断绝张）
-    const seen = {};
-    const acc = c => { const v = GD.isWild(c, level) ? 15 : GD.powerOfCard(c, level); seen[v] = (seen[v] || 0) + 1; };
-    state.played.forEach(acc); hand.forEach(acc);
-    let higher = 0;
-    for (let v = myKey + 1; v <= 17; v++) {
-      const total = v >= 16 ? 2 : 8;           // 王各2张；普通点8张（含级牌口径近似）
-      higher += Math.max(0, total - (seen[v] || 0));
-    }
-    return higher;
-  }
-
-  // ---------- 五档决策 ----------
   function opponentsOf(seat) { return [next(seat), next(next(seat))].filter(s => teamOf(s) !== teamOf(seat)); }
-  function minOppHand(state, seat) {
-    return Math.min(...opponentsOf(seat).map(s => state.hands[s].length));
+  function strongest(moves) { return moves.slice().sort((a, b) => b.combo.key - a.combo.key)[0]; }
+
+  // ---------- 记忆能力（按档位决定能“数清”哪些已出牌） ----------
+  // 0入门:无 | 1中级:王+级牌 | 2高级:+所有≥10 | 3大师:全部 | 4宗师:全部+谁出
+  function memSees(tier, card, level) {
+    if (tier <= 0) return false;
+    if (GD.isJoker(card)) return true;
+    if (card.rank === level) return true;                   // 级牌(主牌)
+    if (tier >= 2 && GD.naturalRank(card.rank) >= 10) return true;
+    return tier >= 3;
+  }
+  function deckCopies(p, level) {
+    if (p >= 16) return 2;                                  // 大/小王各2
+    if (p === 15) return 8;                                 // 级牌8(含2逢人配)
+    if (p === GD.naturalRank(level)) return 0;              // 该自然点全是级牌
+    return 8;
+  }
+  // accounted[p] = 我手牌 + 记得的已出牌 中 power=p 的张数
+  function buildMemory(state, seat, tier, level) {
+    const acc = {};
+    const add = c => { const p = GD.powerOfCard(c, level); acc[p] = (acc[p] || 0) + 1; };
+    for (const c of state.hands[seat]) add(c);              // 自己手牌永远可见
+    for (const c of state.played) if (memSees(tier, c, level)) add(c);
+    const opps = opponentsOf(seat);
+    const oppCnts = opps.map(o => state.hands[o].length);
+    const oppCards = oppCnts.reduce((s, n) => s + n, 0);
+    const mateCards = state.hands[teammate(seat)].length;
+    // 宗师：统计各对手已甩出的大牌数 → 牌力评估（已甩大牌多者，剩余牌力相对弱）
+    const dumped = {};
+    if (tier >= 4 && state.playLog) for (const e of state.playLog)
+      if (teamOf(e.seat) !== teamOf(seat)) for (const c of e.cards)
+        if (GD.powerOfCard(c, level) >= 13) dumped[e.seat] = (dumped[e.seat] || 0) + 1;
+    return { acc, tier, level, opps, oppCnts, dumped,
+             oppShare: (oppCards + mateCards) ? oppCards / (oppCards + mateCards) : 0,
+             oppMin: opps.length ? Math.min(...oppCnts) : 99 };
+  }
+  function outsideCopies(mem, p) { return Math.max(0, deckCopies(p, mem.level) - (mem.acc[p] || 0)); }
+  function outsideHigher(mem, p) { let n = 0; for (let q = p + 1; q <= 17; q++) n += outsideCopies(mem, q); return n; }
+
+  // 对手能压过这手牌的“非炸期望数”（≈0 表示绝张/控场，对手跟不动）
+  function oppFollowCount(combo, mem) {
+    if (isBomb(combo)) return 0;
+    let raw = 0; const k = combo.key;
+    switch (combo.type) {
+      case T.SINGLE: raw = outsideHigher(mem, k); break;
+      case T.PAIR: for (let q = k + 1; q <= 17; q++) { const o = outsideCopies(mem, q); if (o >= 2) raw += o - 1; } break;
+      case T.TRIPLE: case T.TRIPLE_PAIR: for (let q = k + 1; q <= 17; q++) if (outsideCopies(mem, q) >= 3) raw += 1; break;
+      default: for (let q = k + 1; q <= 14; q++) if (outsideCopies(mem, q) >= 1) raw += 0.4; break; // 顺/连对/钢板/同花顺：粗估偏低
+    }
+    return raw * mem.oppShare;
+  }
+  function isControl(combo, mem) { return oppFollowCount(combo, mem) < 0.5; }
+  function hasLock(hand, level, mem) {     // 手里是否还握“绝张”单(顶单，无人能压)
+    for (const c of hand) if (outsideHigher(mem, GD.powerOfCard(c, level)) === 0) return true;
+    return false;
   }
 
+  // ---------- 决策入口（所有档位共用同一套原则；唯一差异 = 记忆能力，全部经由 mem 体现） ----------
   function makeAI(name) {
     const tier = TIER[name] != null ? TIER[name] : 1;
     return function decide(state, seat) {
-      const hand = state.hands[seat], level = state.level, top = state.current, owner = state.currentOwner;
-      // 跟牌阶段：队友正压着 → 高级+ 配合让牌
-      if (top && owner != null && teammate(seat) === owner && tier >= 2) {
-        const goOut = canGoOutNow(hand, level, top);
-        if (!goOut) {
-          // 队友牌少 或 队友这手够大 → 不盖队友
-          if (state.hands[owner].length <= 6 || top.key >= 13 || isBomb(top)) return 'pass';
-        }
-      }
-      return top ? follow(hand, level, top, state, seat, tier) : lead(hand, level, state, seat, tier);
+      const level = state.level, hand = state.hands[seat], top = state.current, owner = state.currentOwner;
+      const mem = buildMemory(state, seat, tier, level);
+      return top ? chooseFollow(hand, level, top, owner, state, seat, mem)
+                 : chooseLead(hand, level, state, seat, mem);
     };
   }
 
-  function canGoOutNow(hand, level, top) {
-    const m = movesBeating(hand, level, top);
-    return m.some(x => x.cards.length === hand.length);
-  }
-
-  function lead(hand, level, state, seat, tier) {
+  // ---------- 领出 ----------
+  function chooseLead(hand, level, state, seat, mem) {
     const moves = allCombos(hand, level);
-    if (!moves.length) return hand.slice(0, 1); // 兜底
-    // 一把走完
+    if (!moves.length) return hand.slice(0, 1);
     const goOut = moves.filter(m => m.cards.length === hand.length);
-    if (goOut.length && tier >= 1) return strongest(goOut).cards;
-    if (tier === 0) { // 入门：随机偏小，避免随手炸
-      const nb = moves.filter(m => !isBomb(m.combo)); const pool = nb.length ? nb : moves;
-      return pool[Math.floor(Math.random() * pool.length)].cards;
-    }
-    // 中级+：选“出后剩余手数最少、且尽量出小牌”的非炸组合
-    const nb = moves.filter(m => !isBomb(m.combo)); const pool = nb.length ? nb : moves;
-    let best = null, bestSc = Infinity;
+    if (goOut.length) return strongest(goOut).cards;             // 能一把走完→走完
+    const nb = moves.filter(m => !isBomb(m.combo));
+    const pool = nb.length ? nb : moves;
+    const mateClose = state.hands[teammate(seat)].length <= 4;
+    let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
-      let sc = handScore(rem, level) + m.combo.key * 0.002;     // 同手数则出小牌
-      if (tier >= 3 && state.hands[teammate(seat)].length <= 4) sc += m.combo.key * 0.01; // 队友将走：领更小
-      if (sc < bestSc) { bestSc = sc; best = m; }
+      // 核心：出后手数最少；并“留高打低”——优先领小牌、把大牌留作回手与控场
+      let sc = -estPlays(rem, level) * 10 - m.combo.key * 0.3;
+      if (m.combo.type === T.TUBE || m.combo.type === T.PLATE) sc += 3;   // 木板/钢板早出对手难跟
+      if (m.combo.type === T.STRAIGHT) sc -= 2;                           // 顺子留后
+      if (mateClose) sc += (m.combo.type === T.SINGLE ? 2 : 0) - m.combo.key * 0.1;  // 队友将走→领小让路
+      if (sc > bestSc) { bestSc = sc; best = m; }
     }
     return best.cards;
   }
 
-  function follow(hand, level, top, state, seat, tier) {
+  // ---------- 跟牌 ----------
+  function chooseFollow(hand, level, top, owner, state, seat, mem) {
     const moves = movesBeating(hand, level, top);
     if (!moves.length) return 'pass';
+    const out = moves.find(m => m.cards.length === hand.length);
+    if (out) return out.cards;                                   // 一把走完
     const nb = moves.filter(m => !isBomb(m.combo)).sort((a, b) => a.combo.key - b.combo.key);
     const bombs = moves.filter(m => isBomb(m.combo)).sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key);
 
-    if (nb.length) {
-      // 一把走完优先
-      const out = nb.find(m => m.cards.length === hand.length);
-      if (out) return out.cards;
-      if (tier === 0) return (Math.random() < 0.65) ? nb[0].cards : 'pass';   // 入门：常乱跟或不跟
-      if (tier === 1) return nb[0].cards;                                      // 中级：最小可压
-      // 高级+：最小可压，但避免拆掉成型结构、避免无谓送大单
-      const best = pickFollowAdvanced(hand, level, nb, state, seat, tier);
-      return best ? best.cards : 'pass';
+    // 队友正控场：配合让牌（记忆越好→isControl 判断越准，越不会瞎盖队友）
+    if (owner != null && teammate(seat) === owner) {
+      const mateClose = state.hands[owner].length <= 6;
+      if (mateClose || isBomb(top) || isControl(top, mem)) return 'pass';
     }
-    // 仅能用炸
-    if (shouldBomb(tier, state, seat, hand, level)) return bombs[0].cards;
+
+    if (nb.length) {
+      const pick = pickFollow(hand, level, nb, mem);
+      if (pick) return pick.cards;
+    }
+    if (bombs.length && shouldBomb(state, seat, hand, level, mem, owner)) return bombs[0].cards;
     return 'pass';
   }
 
-  function pickFollowAdvanced(hand, level, nb, state, seat, tier) {
-    // 在“最小可压”附近，选拆牌代价最低者；若仅有的可压牌是高单且无人威胁(绝张)，可保留→pass
-    let best = null, bestSc = Infinity;
+  function pickFollow(hand, level, nb, mem) {
+    let best = null, bestSc = -Infinity;
     for (const m of nb) {
       const rem = removeSig(hand, m.cards);
-      const sc = handScore(rem, level) + m.combo.key * 0.02;   // 偏好出小、少拆
-      if (sc < bestSc) { bestSc = sc; best = m; }
+      let sc = -estPlays(rem, level) * 10 - m.combo.key * 0.05;
+      if (isControl(m.combo, mem)) sc += 3;                      // 这手压下去对手反压不动→赢墩夺权(记忆好才认得出)
+      if (hasLock(rem, level, mem)) sc += 2;                     // 出完仍有回手
+      if (sc > bestSc) { bestSc = sc; best = m; }
     }
-    // 大师+：若这手要送出大牌(高key单)而对手并不紧迫，且我领先，宁可pass留牌
-    if (tier >= 3 && best && best.combo.type === T.SINGLE && best.combo.key >= 14) {
-      if (minOppHand(state, seat) > 4 && state.hands[seat].length > 6) return null;
-    }
+    // 跟牌纪律（记忆驱动）：这手最小可压若压不死对手(非绝张、会被反压)、又是较大的单/对、且我方不紧迫，
+    //   则跟下去多半是“白送大牌”——宁可 pass 留牌。记忆好才认得出哪些跟牌是绝张(值得跟)/哪些是白送。
+    if (best && !isControl(best.combo, mem) && best.cards.length <= 2 && best.combo.key >= FOLLOW_KEY
+        && mem.oppMin > FOLLOW_OPP && hand.length > 5) return null;
     return best;
   }
 
-  function shouldBomb(tier, state, seat, hand, level) {
-    const oh = minOppHand(state, seat);
-    if (tier === 0) return false;
-    if (tier === 1) return oh <= 1;                  // 中级：对手将赢才炸
-    if (tier === 2) return oh <= 2;                  // 高级
-    // 大师/宗师：对手将赢，或残局抢风走牌
-    if (oh <= 2) return true;
-    if (tier >= 4) {
-      const total = state.hands.reduce((s, h) => s + h.length, 0);
-      if (total <= 16 && handScore(hand, level) <= 3) return true; // 残局且我接近走完→抢风
-    }
-    return false;
+  // 对手威胁度：牌越少越危险；宗师额外用「已甩大牌数」修正(甩得多→剩余牌力弱→威胁小)
+  function oppDanger(state, mem, o) {
+    let d = 20 - state.hands[o].length;
+    if (mem.tier >= 4) d -= (mem.dumped[o] || 0) * 1.5;
+    return d;
   }
+  // 外面(未被记忆记录)的高威胁材料：K 及以上 + 级牌 + 大小王。记忆越好→记录越多→此值越真实(不虚高)
+  function highMaterial(mem) { let m = 0; for (let q = 13; q <= 17; q++) m += outsideCopies(mem, q); return m; }
 
-  function strongest(moves) { return moves.slice().sort((a, b) => b.combo.key - a.combo.key)[0]; }
+  // ---------- 是否出炸（所有档位同一口径；“威胁感”由记忆驱动：记忆差→虚高→滥炸浪费） ----------
+  function shouldBomb(state, seat, hand, level, mem, owner) {
+    const oppMin = mem.oppMin, myPlays = estPlays(hand, level);
+    if (oppMin <= 1) return true;                             // 对手即将赢→必炸
+    if (myPlays <= 2) return true;                            // 我即将走完→抢风必炸
+    const ownerIsOpp = owner != null && teamOf(owner) !== teamOf(seat);
+    // 取舍：放掉不紧迫/已虚的强对手，省炸专防真威胁（宗师用 dumped 修正）
+    if (ownerIsOpp && mem.opps.length === 2) {
+      const other = mem.opps[0] === owner ? mem.opps[1] : mem.opps[0];
+      if (oppDanger(state, mem, other) > oppDanger(state, mem, owner) + 4 && state.hands[owner].length >= 6) return false;
+    }
+    // 威胁感：对手牌越少越危险 + 外面高材料越多越危险（记忆好→材料估得准偏低→省炸；记忆差→虚高→滥炸）
+    const danger = (15 - oppMin) + highMaterial(mem) * mem.oppShare * 0.6 + (ownerIsOpp ? 2 : 0);
+    return danger >= BOMB_TH;
+  }
+  // 经复式(运气抵消)对抗扫参确定的阈值
+  const BOMB_TH = 12, FOLLOW_KEY = 7, FOLLOW_OPP = 4;
 
   // ---------- 自动理牌：把手牌分解为“最少手数”的牌型组合 ----------
   function wildUsed(m, level) { return m.cards.filter(c => GD.isWild(c, level)).length; }
@@ -1192,6 +1239,7 @@
     D.hands[seat] = D.hands[seat].filter(c => !ids.has(c.id));
     D.current = combo; D.currentOwner = seat; D.passes = 0;
     for (const c of cards) D.played.push(c);
+    D.playLog.push({ seat, cards: cards.slice() });
     D.lastPlayed[seat] = { cards: cards.slice(), combo };
     if (D.hands[seat].length === 0) {
       D.finished.push(seat); D.active[seat] = false;
@@ -1225,7 +1273,7 @@
     const seat = D.turn;
     if (!D.active[seat]) return;
     let decide;
-    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('高级')); }
+    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('大师')); }
     else decide = M.ais[seat] || AI.makeAI(M.diff[seat]);
     let move;
     try { move = decide(D, seat); } catch (e) { move = 'pass'; }
@@ -1251,7 +1299,7 @@
       tributeMsg = describeTribute(tr);
     }
     D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
-      finished: [], active: [true, true, true, true], played: [], lastPlayed: [null, null, null, null], phase: 'playing' };
+      finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null], phase: 'playing' };
     sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();

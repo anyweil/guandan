@@ -63,28 +63,38 @@ console.log('== 对局合法性（各档 AI 跑整场不报错）==');
   } catch (e) { ok(false, name + ' 对局抛错: ' + e.message); }
 });
 
-console.log('== 强度梯度（多场对抗胜率）==');
-function tourney(teamA, teamB, n) {
-  // A 队(座0,2)=teamA  B 队(座1,3)=teamB
-  let aw = 0, bw = 0, draw = 0;
+console.log('== 强度梯度（复式对局：同一副牌强弱方各打一遍，运气抵消，只比水平）==');
+// 复式法：每副固定牌让 strong 队分别坐 {0,2} 与 {1,3} 各打一遍，统计 strong 拿头游的比例。
+function dupHeadRate(strong, weak, n) {
+  const levels = ['2', '5', '8', 'J', 'A'];
+  let sH = 0, tot = 0;
   for (let i = 0; i < n; i++) {
-    const d = [AI.makeAI(teamA), AI.makeAI(teamB), AI.makeAI(teamA), AI.makeAI(teamB)];
-    const r = G.playMatch(d, { seed: 5000 + i * 7, maxDeals: 80, firstLeader: i % 4 });
-    if (r.winner === 'A') aw++; else if (r.winner === 'B') bw++; else draw++;
+    const seed = 12345 + i * 101, level = levels[i % levels.length], leader = i % 4;
+    const base = GD.deal(seed);
+    const r1 = G.runDeal(level, base.map(h => h.slice()), leader,
+      [AI.makeAI(strong), AI.makeAI(weak), AI.makeAI(strong), AI.makeAI(weak)]);
+    const r2 = G.runDeal(level, base.map(h => h.slice()), leader,
+      [AI.makeAI(weak), AI.makeAI(strong), AI.makeAI(weak), AI.makeAI(strong)]);
+    if (r1.ranks[0] === 0 || r1.ranks[0] === 2) sH++;       // run1: strong 坐 0/2
+    if (r2.ranks[0] === 1 || r2.ranks[0] === 3) sH++;       // run2: strong 坐 1/3（同一副牌）
+    tot += 2;
   }
-  return { aw, bw, draw, n };
+  return sH / tot * 100;
 }
-const N = 40;
-let t;
-t = tourney('宗师', '入门', N);
-console.log(`  宗师 vs 入门 : 宗师胜 ${t.aw} / 入门胜 ${t.bw} / 平 ${t.draw}（共${N}场）`);
-ok(t.aw > t.bw, '宗师 明显强于 入门');
-t = tourney('高级', '中级', N);
-console.log(`  高级 vs 中级 : 高级胜 ${t.aw} / 中级胜 ${t.bw} / 平 ${t.draw}`);
-ok(t.aw >= t.bw, '高级 不弱于 中级');
-t = tourney('大师', '入门', N);
-console.log(`  大师 vs 入门 : 大师胜 ${t.aw} / 入门胜 ${t.bw} / 平 ${t.draw}`);
-ok(t.aw > t.bw, '大师 明显强于 入门');
+const N = 300;
+// 有记忆各档对“无记忆”的入门应有明显优势（>52%）
+for (const name of ['中级', '高级', '大师', '宗师']) {
+  const r = dupHeadRate(name, '入门', N);
+  console.log(`  ${name} vs 入门 : ${r.toFixed(1)}% 头游`);
+  ok(r > 52, name + ' 明显强于 入门(无记忆)');
+}
+// 记忆越多不应更差：相邻档单调非降（容忍噪声 ±2.5%）
+const ladder = ['入门', '中级', '高级', '大师', '宗师'];
+for (let i = 1; i < ladder.length - 1; i++) {
+  const r = dupHeadRate(ladder[i + 1], ladder[i], N);
+  console.log(`  ${ladder[i + 1]} vs ${ladder[i]} : ${r.toFixed(1)}%`);
+  ok(r >= 47.5, ladder[i + 1] + ' 不弱于 ' + ladder[i]);
+}
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
