@@ -3,8 +3,17 @@
 一个完整的掼蛋游戏。**离线优先**（无网络可玩，适合飞机/地铁），基于纯 H5（HTML/CSS/原生 JS，无构建、无框架、无第三方依赖），引擎与界面解耦，便于后续做联机版与多端迁移。
 
 ## 运行方式
-- **离线**：直接双击 `index.html` 在浏览器打开即可（`file://` 下运行，无需服务器、无需联网）。
+- **在线（PWA · 主屏 App）**：打开 **https://anyweil.github.io/guandan/** ，手机浏览器「添加到主屏幕」即可像原生 App 一样独立全屏运行、断网可玩（首次打开后自动缓存全部资源）。
+  - iOS：Safari → 分享 → 添加到主屏幕。Android：Chrome → 菜单 → 安装应用 / 添加到主屏幕。
+- **离线（单文件）**：双击 `index.html` 或自包含的 `guandan.html`（`file://` 下运行，无需服务器、无需联网）。
 - **引擎测试**：`node test/engine.test.js`
+
+## 部署（GitHub Pages）
+仓库根目录直发 `main` 分支（已含 `.nojekyll`、`manifest.webmanifest`、`sw.js`、`icons/`）：
+```
+git push origin main          # 推送即自动发布到 https://anyweil.github.io/guandan/
+```
+图标如需重绘：`python3 icons/gen_icons.py`（依赖本机 PIL 与 PingFang 字体）。
 
 ## 规则口径
 采用**全国竞技掼蛋标准规则**：
