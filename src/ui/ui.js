@@ -32,14 +32,16 @@
   }
 
   // ---------- 卡片渲染 ----------
-  const SM = { S: '♠', H: '♥', C: '♣', D: '♦' };
+  // ︎ = 文本变体选择符：强制矢量文字字形（清晰、可上色），避免被渲染成笨重 emoji
+  const VS = '︎';
+  const SM = { S: '♠' + VS, H: '♥' + VS, C: '♣' + VS, D: '♦' + VS };
   function cardEl(c, cls) {
     const el = document.createElement('div');
     el.className = 'card ' + (cls || '');
     if (GD.isJoker(c)) {
       const big = c.rank === 'b';
       el.classList.add('joker', big ? 'big' : 'small');
-      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">★</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
+      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">'+'★'+VS+'</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');

@@ -59,19 +59,19 @@
     box-shadow:0 .03em .075em rgba(0,0,0,.3);font-weight:700;
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
   .card.red{color:var(--red)}
-  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.82;font-weight:800;z-index:1}
-  .card .corner b{font-size:.4em;letter-spacing:-.02em}
-  .card .corner i{font-style:normal;font-size:.3em;margin-top:.05em}
-  .card .corner.tl{top:.09em;left:.1em} .card .corner.br{right:.1em;bottom:.09em;transform:rotate(180deg)}
-  .card .pip{position:absolute;top:51%;left:50%;transform:translate(-50%,-50%);font-size:.64em;line-height:1;opacity:.96}
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.8;font-weight:800;z-index:1}
+  .card .corner b{font-size:.5em;letter-spacing:-.04em}
+  .card .corner i{font-style:normal;font-size:.34em;margin-top:.01em}
+  .card .corner.tl{top:.07em;left:.09em} .card .corner.br{right:.09em;bottom:.07em;transform:rotate(180deg)}
+  .card .pip{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);font-size:.44em;line-height:1;opacity:.9}
   /* 级牌 / 逢人配（红桃级牌·万能）金色高亮 */
   .card.lv{box-shadow:inset 0 0 0 .04em var(--gold),0 .03em .075em rgba(0,0,0,.3)}
   .card.wild{background:linear-gradient(165deg,#fffdf3 0%,#ffefbf 100%);
     box-shadow:inset 0 0 0 .045em var(--gold),0 .03em .075em rgba(0,0,0,.32)}
   /* 大小王 */
   .card.joker.big{color:var(--red)} .card.joker.small{color:#2a2f3a}
-  .card.joker .corner.tl{font-size:.34em;font-weight:800;line-height:1}
-  .card.joker .pip{font-size:.58em}
+  .card.joker .corner.tl{font-size:.36em;font-weight:800;line-height:1}
+  .card.joker .pip{font-size:.46em}
   .card .jlb{position:absolute;left:0;right:0;bottom:.11em;text-align:center;font-size:.2em;font-weight:800;letter-spacing:.12em}
   /* 出牌区小牌（对手出牌展示） */
   .card.mini{--cw:clamp(24px,min(5.8vw,4.6vh),48px)}
@@ -1043,14 +1043,16 @@
   }
 
   // ---------- 卡片渲染 ----------
-  const SM = { S: '♠', H: '♥', C: '♣', D: '♦' };
+  // ︎ = 文本变体选择符：强制矢量文字字形（清晰、可上色），避免被渲染成笨重 emoji
+  const VS = '︎';
+  const SM = { S: '♠' + VS, H: '♥' + VS, C: '♣' + VS, D: '♦' + VS };
   function cardEl(c, cls) {
     const el = document.createElement('div');
     el.className = 'card ' + (cls || '');
     if (GD.isJoker(c)) {
       const big = c.rank === 'b';
       el.classList.add('joker', big ? 'big' : 'small');
-      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">★</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
+      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">'+'★'+VS+'</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');
