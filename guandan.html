@@ -51,37 +51,44 @@
   .pass-tag{background:rgba(0,0,0,.4);border:1px solid var(--line);border-radius:20px;padding:2px 12px;font-size:12px;color:#ffd9d4}
   .mid{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#bfe0d0;font-size:12.5px;opacity:.92;pointer-events:none}
   .mid .big{font-size:15px;color:#eaf3ee;font-weight:700}
-  /* 牌：真实扑克牌样式（左上+右下双角标 + 中央花色符号） */
-  .card{position:relative;overflow:hidden;background:#fff;color:#1c2230;border:1px solid #c7ccd6;border-radius:7px;
-    box-shadow:0 1px 3px rgba(0,0,0,.32);font-weight:700}
+  /* 牌：等比缩放——牌宽=--cw，内部元素一律以 em(相对牌宽) 表达，比例恒定，随屏幕动态缩放 */
+  .card{--cw:44px;position:relative;overflow:hidden;flex:none;
+    width:var(--cw);height:calc(var(--cw) * 1.4);font-size:var(--cw);
+    background:linear-gradient(157deg,#ffffff 0%,#eef1f6 100%);color:var(--ink);
+    border:1px solid #cdd2dc;border-radius:.12em;
+    box-shadow:0 .03em .075em rgba(0,0,0,.3);font-weight:700;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
   .card.red{color:var(--red)}
-  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.9;font-weight:800;z-index:1}
-  .card .corner b{font-size:13px} .card .corner i{font-style:normal;font-size:11px;margin-top:1px}
-  .card .corner.tl{top:3px;left:3px} .card .corner.br{bottom:3px;right:3px;transform:rotate(180deg)}
-  .card .pip{position:absolute;top:53%;left:50%;transform:translate(-50%,-50%);font-size:15px;opacity:.95}
-  .card.lv{outline:2px solid var(--gold);outline-offset:-2px}
-  .card.wild{outline:2px solid var(--gold);outline-offset:-2px;background:linear-gradient(165deg,#fffdf4,#fff2cb)}
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.82;font-weight:800;z-index:1}
+  .card .corner b{font-size:.4em;letter-spacing:-.02em}
+  .card .corner i{font-style:normal;font-size:.3em;margin-top:.05em}
+  .card .corner.tl{top:.09em;left:.1em} .card .corner.br{right:.1em;bottom:.09em;transform:rotate(180deg)}
+  .card .pip{position:absolute;top:51%;left:50%;transform:translate(-50%,-50%);font-size:.64em;line-height:1;opacity:.96}
+  /* 级牌 / 逢人配（红桃级牌·万能）金色高亮 */
+  .card.lv{box-shadow:inset 0 0 0 .04em var(--gold),0 .03em .075em rgba(0,0,0,.3)}
+  .card.wild{background:linear-gradient(165deg,#fffdf3 0%,#ffefbf 100%);
+    box-shadow:inset 0 0 0 .045em var(--gold),0 .03em .075em rgba(0,0,0,.32)}
   /* 大小王 */
   .card.joker.big{color:var(--red)} .card.joker.small{color:#2a2f3a}
-  .card.joker .corner{font-size:11px;font-weight:800} .card.joker .pip{font-size:18px;top:46%}
-  .card .jlb{position:absolute;left:0;right:0;bottom:4px;text-align:center;font-size:9px;font-weight:800;letter-spacing:2px}
-  /* 出牌区小牌 */
-  .card.mini{width:27px;height:38px}
-  .card.mini .corner.br{display:none} .card.mini .corner b{font-size:11px} .card.mini .corner i{font-size:9px}
-  .card.mini .pip{font-size:12px} .card.mini .jlb{font-size:7px;letter-spacing:1px}
+  .card.joker .corner.tl{font-size:.34em;font-weight:800;line-height:1}
+  .card.joker .pip{font-size:.58em}
+  .card .jlb{position:absolute;left:0;right:0;bottom:.11em;text-align:center;font-size:.2em;font-weight:800;letter-spacing:.12em}
+  /* 出牌区小牌（对手出牌展示） */
+  .card.mini{--cw:clamp(24px,min(5.8vw,4.6vh),48px)}
+  .card.mini .corner.br{display:none}
   /* 手牌区 */
   .bottom{flex:none;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(0,0,0,.22)}
-  .hand{display:flex;justify-content:center;flex-wrap:wrap;gap:3px;min-height:64px;padding:2px}
-  .hand .card{width:43px;height:61px;cursor:pointer;transition:transform .12s}
-  .hand .card .corner b{font-size:14.5px} .hand .card .corner i{font-size:12px}
-  .hand .card .pip{font-size:18px} .hand .card .jlb{font-size:10px}
-  .hand .card.sel{transform:translateY(-12px);outline:2px solid var(--sel);box-shadow:0 4px 10px rgba(0,0,0,.4)}
+  /* 手牌区：font-size 即牌宽基准，clamp 随屏宽/屏高动态缩放，适配手机/折叠屏/平板 */
+  .hand{display:flex;justify-content:center;flex-wrap:wrap;gap:.14em;min-height:78px;padding:2px;
+    font-size:clamp(38px,min(11.2vw,8.6vh),92px)}
+  .hand .card{--cw:1em;cursor:pointer;transition:transform .12s}
+  .hand .card.sel{transform:translateY(-.26em);z-index:2;
+    box-shadow:inset 0 0 0 .055em var(--sel),0 .09em .2em rgba(0,0,0,.45)}
   /* 理牌：每个牌型一列纵向叠放 */
-  .hand.grouped{align-items:flex-start;gap:6px 8px;max-height:46vh;overflow-y:auto;padding:6px 2px}
+  .hand.grouped{align-items:flex-start;gap:.18em .26em;max-height:46vh;overflow-y:auto;padding:6px 2px}
   .hand.grouped .col{display:flex;flex-direction:column;align-items:center}
-  .hand.grouped .col .card + .card{margin-top:-31px}   /* 露出 ~30px：左上角标完整可见 */
-  .hand.grouped .card.sel{transform:translateX(11px);z-index:50;box-shadow:0 2px 12px rgba(0,0,0,.5)}
-  @media(max-width:420px){ .hand.grouped .col .card + .card{margin-top:-25px} }
+  .hand.grouped .col .card + .card{margin-top:calc(var(--cw) * -0.72)}   /* 等比露出顶部角标区 */
+  .hand.grouped .card.sel{transform:translateX(.26em);z-index:50;box-shadow:0 .06em .26em rgba(0,0,0,.5)}
   .bar{display:flex;gap:8px;justify-content:center;margin-top:6px}
   .bar.util{margin-top:4px;gap:10px}
   .util-btn{background:rgba(255,255,255,.14);color:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
@@ -107,7 +114,7 @@
   .toast{position:fixed;left:50%;bottom:24%;transform:translateX(-50%);background:rgba(0,0,0,.8);
     border:1px solid var(--line);border-radius:10px;padding:9px 16px;font-size:13px;z-index:40;opacity:0;transition:opacity .25s;pointer-events:none;max-width:80%;text-align:center}
   .toast.show{opacity:1}
-  @media(max-width:420px){ .hand .card{width:37px;height:53px} .hand .card .corner b{font-size:12.5px} .hand .card .corner i{font-size:10.5px} .hand .card .pip{font-size:15px} .seat{min-width:70px;padding:5px 7px} }
+  @media(max-width:420px){ .seat{min-width:70px;padding:5px 7px} }
 </style>
 </head>
 <body>
@@ -1043,7 +1050,7 @@
     if (GD.isJoker(c)) {
       const big = c.rank === 'b';
       el.classList.add('joker', big ? 'big' : 'small');
-      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">♚</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
+      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">★</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');

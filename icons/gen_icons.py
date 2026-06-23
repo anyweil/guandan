@@ -1,101 +1,120 @@
 #!/usr/bin/env python3
-# 生成掼蛋 PWA 图标：绿色牌桌底 + 双扑克牌(红桃) + 金字"掼蛋"
-# 用法：python3 icons/gen_icons.py   （在项目根目录执行）
+# 生成掼蛋 PWA 图标。
+# 设计要点：① 平滑爱心(参数方程) ② 双牌微展、构图居中平衡
+#          ③ 内容收进中心安全区——maskable 落在 80% 安全圆内，主屏圆角/圆形遮罩都不裁切。
+# 用法：python3 icons/gen_icons.py （项目根目录执行）
 import os, math
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 FONT = "/System/Library/Fonts/PingFang.ttc"
-SS = 4  # 超采样倍率，画大后缩小，边缘更顺滑
+SS = 4  # 超采样
 
 
-def font(px, idx=8):  # idx 8 ≈ PingFang Semibold/Heavy
+def font(px, idx=8):
     return ImageFont.truetype(FONT, px, index=idx)
 
 
-def rounded(draw, box, r, fill):
-    draw.rounded_rectangle(box, radius=r, fill=fill)
-
-
-def heart(draw, cx, cy, s, fill):
-    # 用两圆 + 多边形拼一个心形
-    r = s * 0.28
-    draw.ellipse([cx - s*0.5, cy - r, cx - s*0.5 + 2*r, cy - r + 2*r], fill=fill)
-    draw.ellipse([cx + s*0.5 - 2*r, cy - r, cx + s*0.5, cy - r + 2*r], fill=fill)
-    draw.polygon([(cx - s*0.62, cy + r*0.25), (cx + s*0.62, cy + r*0.25),
-                  (cx, cy + s*0.82)], fill=fill)
-
-
 def vgrad(size, top, bot):
-    base = Image.new("RGB", (1, size), top)
-    px = base.load()
+    g = Image.new("RGB", (1, size), 0)
+    px = g.load()
     for y in range(size):
         t = y / max(1, size - 1)
         px[0, y] = tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3))
-    return base.resize((size, size))
+    return g.resize((size, size))
 
 
-def draw_card(canvas, cx, cy, w, h, angle, with_mark=True):
-    # 单张白牌（含红桃 + 角标 A），独立图层后旋转贴回
-    pad = int(max(w, h) * 0.4)
-    cw, ch = w + pad * 2, h + pad * 2
+def heart_pts(cx, cy, w, h):
+    # 经典平滑爱心参数方程，归一化到给定包围盒
+    pts = []
+    for i in range(241):
+        t = i / 240 * 2 * math.pi
+        x = 16 * math.sin(t) ** 3
+        y = 13 * math.cos(t) - 5 * math.cos(2*t) - 2 * math.cos(3*t) - math.cos(4*t)
+        pts.append((x, y))
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+    sx = w / (maxx - minx); sy = h / (maxy - miny)
+    out = []
+    for x, y in pts:
+        nx = cx + (x - (minx + maxx) / 2) * sx
+        ny = cy - (y - (miny + maxy) / 2) * sy   # y 翻转：心尖朝下
+        out.append((nx, ny))
+    return out
+
+
+def draw_card(canvas, cx, cy, w, h, angle, mark=False):
+    # 单张白牌（圆角 + 细描边 + 轻微竖向渐变），可选红桃 A 标记；独立图层旋转后贴回
+    pad = int(max(w, h) * 0.45)
+    cw, ch = w + 2 * pad, h + 2 * pad
     layer = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
+    r = int(w * 0.13)
     # 阴影
-    rounded(d, [pad + 6, pad + 10, pad + w + 6, pad + h + 10], int(w * 0.12), (0, 0, 0, 70))
-    # 牌面
-    rounded(d, [pad, pad, pad + w, pad + h], int(w * 0.12), (252, 250, 245, 255))
-    rounded(d, [pad, pad, pad + w, pad + h], int(w * 0.12), None)
-    d.rounded_rectangle([pad, pad, pad + w, pad + h], radius=int(w * 0.12),
-                        outline=(0, 0, 0, 25), width=max(2, w // 90))
-    if with_mark:
+    d.rounded_rectangle([pad + w*0.04, pad + h*0.05, pad + w + w*0.04, pad + h + h*0.05],
+                        radius=r, fill=(0, 0, 0, 60))
+    # 牌面渐变
+    face = vgrad(max(w, h), (255, 255, 255), (236, 240, 246)).convert("RGBA").resize((w, h))
+    fmask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(fmask).rounded_rectangle([0, 0, w-1, h-1], radius=r, fill=255)
+    layer.paste(face, (pad, pad), fmask)
+    d.rounded_rectangle([pad, pad, pad + w - 1, pad + h - 1], radius=r,
+                        outline=(205, 210, 220, 255), width=max(2, w // 80))
+    if mark:
         red = (210, 59, 52, 255)
-        # 中央大红桃
-        heart(d, pad + w // 2, pad + int(h * 0.46), int(w * 0.5), red)
-        # 左上角标 A + 小心
-        f = font(int(w * 0.22))
-        d.text((pad + int(w * 0.13), pad + int(h * 0.07)), "A", font=f, fill=red)
-        heart(d, pad + int(w * 0.2), pad + int(h * 0.27), int(w * 0.16), red)
-    layer = layer.rotate(angle, resample=Image.BICUBIC, expand=False, center=(cw // 2, ch // 2))
-    canvas.alpha_composite(layer, (int(cx - cw // 2), int(cy - ch // 2)))
+        d.polygon(heart_pts(pad + w*0.5, pad + h*0.5, w*0.46, h*0.34), fill=red)
+        f = font(int(w * 0.26))
+        d.text((pad + w*0.14, pad + h*0.08), "A", font=f, fill=red)
+        d.polygon(heart_pts(pad + w*0.205, pad + h*0.30, w*0.16, h*0.12), fill=red)
+    layer = layer.rotate(angle, resample=Image.BICUBIC, center=(cw//2, ch//2))
+    canvas.alpha_composite(layer, (int(cx - cw//2), int(cy - ch//2)))
+
+
+def emblem(canvas, S, cy, fit):
+    # 在以 (S/2, cy) 为中心、高度 = fit*S 的范围内绘制「双牌 + 掼蛋」整组徽标
+    EH = fit * S
+    cw, ch = int(EH * 0.42), int(EH * 0.58)        # 单牌尺寸（牌组占徽标上 ~62%）
+    cards_cy = cy - int(EH * 0.16)
+    draw_card(canvas, S//2 + int(EH*0.17), cards_cy - int(EH*0.02), cw, ch, -13, mark=False)
+    draw_card(canvas, S//2 - int(EH*0.11), cards_cy + int(EH*0.02), cw, ch, 7, mark=True)
+    # 金字"掼蛋"
+    d = ImageDraw.Draw(canvas)
+    f = font(int(EH * 0.26))
+    bb = d.textbbox((0, 0), "掼蛋", font=f)
+    tw, th = bb[2]-bb[0], bb[3]-bb[1]
+    tx = (S - tw)//2 - bb[0]
+    ty = cy + int(EH*0.30) - bb[1]
+    d.text((tx + S//260, ty + S//260), "掼蛋", font=f, fill=(0, 0, 0, 120))
+    d.text((tx, ty), "掼蛋", font=f, fill=(240, 205, 110, 255))
 
 
 def make(px, maskable=False):
     S = px * SS
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    # 背景：径向感的绿色渐变（用竖向渐变近似 + 顶部高光）
-    bg = vgrad(S, (26, 160, 106), (10, 77, 51)).convert("RGBA")
+    bg = vgrad(S, (28, 168, 112), (9, 74, 50)).convert("RGBA")
     if maskable:
-        img.paste(bg, (0, 0))            # 满铺，留安全区
+        img.paste(bg, (0, 0))                       # 满铺，遮罩自行裁角
     else:
-        # 圆角方底
-        mask = Image.new("L", (S, S), 0)
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, S, S], radius=int(S * 0.22), fill=255)
-        img.paste(bg, (0, 0), mask)
-    d = ImageDraw.Draw(img)
+        m = Image.new("L", (S, S), 0)
+        ImageDraw.Draw(m).rounded_rectangle([0, 0, S-1, S-1], radius=int(S*0.22), fill=255)
+        img.paste(bg, (0, 0), m)
     # 顶部柔光
     glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([int(S*0.1), int(-S*0.45), int(S*0.9), int(S*0.45)],
-                                 fill=(255, 255, 255, 26))
+    ImageDraw.Draw(glow).ellipse([int(S*0.08), int(-S*0.5), int(S*0.92), int(S*0.42)],
+                                 fill=(255, 255, 255, 24))
     img.alpha_composite(glow)
-
-    inset = 0.0 if not maskable else 0.0
-    cw, ch = int(S * 0.34), int(S * 0.47)
-    cx, cy = S // 2, int(S * 0.40)
-    draw_card(img, cx + int(S*0.075), cy - int(S*0.02), cw, ch, -14, with_mark=False)
-    draw_card(img, cx - int(S*0.045), cy + int(S*0.02), cw, ch, 7, with_mark=True)
-
-    # 金字"掼蛋"
-    gold = (240, 205, 110, 255)
-    f = font(int(S * 0.17))
-    txt = "掼蛋"
-    bb = d.textbbox((0, 0), txt, font=f)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    tx, ty = (S - tw) // 2 - bb[0], int(S * 0.74) - bb[1]
-    d.text((tx + S//220, ty + S//220), txt, font=f, fill=(0, 0, 0, 110))  # 描影
-    d.text((tx, ty), txt, font=f, fill=gold)
-
+    # 内容安全区：maskable 收进 80% 安全圆 → 徽标高 0.60；普通图标可略大 0.72
+    emblem(img, S, S//2, fit=0.60 if maskable else 0.72)
     return img.resize((px, px), Image.LANCZOS)
+
+
+def circle_preview(src, px):  # 模拟主流圆形遮罩，自检内容是否被裁
+    im = make(px, maskable=True)
+    m = Image.new("L", (px, px), 0)
+    ImageDraw.Draw(m).ellipse([int(px*0.1), int(px*0.1), int(px*0.9), int(px*0.9)], fill=255)
+    out = Image.new("RGBA", (px, px), (20, 20, 20, 255))
+    out.paste(im, (0, 0), m)
+    out.save(os.path.join(OUT, "_preview-circle.png"))
 
 
 for px, name, mask in [(192, "icon-192.png", False), (512, "icon-512.png", False),
@@ -103,4 +122,6 @@ for px, name, mask in [(192, "icon-192.png", False), (512, "icon-512.png", False
                        (32, "favicon-32.png", False)]:
     make(px, mask).save(os.path.join(OUT, name))
     print("wrote", name)
+circle_preview(None, 256)
+print("wrote _preview-circle.png (自检用，不发布)")
 print("done")

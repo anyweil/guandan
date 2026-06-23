@@ -39,7 +39,7 @@
     if (GD.isJoker(c)) {
       const big = c.rank === 'b';
       el.classList.add('joker', big ? 'big' : 'small');
-      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">♚</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
+      el.innerHTML = '<span class="corner tl">' + (big ? '大' : '小') + '</span><span class="pip">★</span><span class="jlb">' + (big ? '大王' : '小王') + '</span>';
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');
