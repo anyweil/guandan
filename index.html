@@ -55,17 +55,18 @@
   .card{--cw:44px;position:relative;overflow:hidden;flex:none;
     width:var(--cw);height:calc(var(--cw) * 1.4);font-size:var(--cw);
     background:linear-gradient(157deg,#ffffff 0%,#eef1f6 100%);color:var(--ink);
-    border:1px solid #cdd2dc;border-radius:.12em;
+    border:1px solid #cdd2dc;border-radius:.09em;
     box-shadow:0 .03em .075em rgba(0,0,0,.3);font-weight:700;
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif}
   .card.red{color:var(--red)}
-  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;line-height:.78;font-weight:800;z-index:1}
-  .card .corner b{font-size:.3em;letter-spacing:-.03em}
-  .card .corner i{font-style:normal;font-size:.22em;margin-top:.02em}
-  .card .corner.tl{top:.055em;left:.075em} .card .corner.br{right:.075em;bottom:.055em;transform:rotate(180deg)}
+  /* 角标：rank 为主、花色约 70% 紧随其下（标准扑克比例）；留白适度，不挤 */
+  .card .corner{position:absolute;display:flex;flex-direction:column;align-items:center;font-weight:800;z-index:1}
+  .card .corner b{font-size:.27em;line-height:1;letter-spacing:-.03em}
+  .card .corner i{font-style:normal;font-size:.19em;line-height:1;margin-top:.06em}
+  .card .corner.tl{top:.06em;left:.07em} .card .corner.br{right:.07em;bottom:.06em;transform:rotate(180deg)}
   .card .pip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.4em;line-height:1;opacity:.95}
   /* 级牌 / 逢人配（红桃级牌·万能）金色高亮 */
-  .card.lv{box-shadow:inset 0 0 0 .04em var(--gold),0 .03em .075em rgba(0,0,0,.3)}
+  .card.lv{box-shadow:inset 0 0 0 .03em var(--gold),0 .03em .075em rgba(0,0,0,.3)}
   .card.wild{background:linear-gradient(165deg,#fffdf3 0%,#ffefbf 100%);
     box-shadow:inset 0 0 0 .045em var(--gold),0 .03em .075em rgba(0,0,0,.32)}
   /* 大小王 */
@@ -87,7 +88,7 @@
   /* 理牌：每个牌型一列纵向叠放 */
   .hand.grouped{align-items:flex-start;gap:.18em .26em;max-height:46vh;overflow-y:auto;padding:6px 2px}
   .hand.grouped .col{display:flex;flex-direction:column;align-items:center}
-  .hand.grouped .col .card + .card{margin-top:calc(var(--cw) * -0.72)}   /* 等比露出顶部角标区 */
+  .hand.grouped .col .card + .card{margin-top:calc(var(--cw) * -0.94)}   /* 仅露出顶部角标带(~33%牌高)，中央花色藏住 */
   .hand.grouped .card.sel{transform:translateX(.26em);z-index:50;box-shadow:0 .06em .26em rgba(0,0,0,.5)}
   .bar{display:flex;gap:8px;justify-content:center;margin-top:6px}
   .bar.util{margin-top:4px;gap:10px}
