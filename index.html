@@ -85,10 +85,13 @@
   .hand .card{--cw:1em;cursor:pointer;transition:transform .12s}
   .hand .card.sel{transform:translateY(-.26em);z-index:2;
     box-shadow:inset 0 0 0 .055em var(--sel),0 .09em .2em rgba(0,0,0,.45)}
-  /* 理牌：每个牌型一列纵向叠放 */
+  /* 理牌：每个牌型一列纵向叠放。被遮的下层牌只保留左上角标——
+     隐藏其中央花色与右下角标（否则会从露出带里渗出来），仅末张保留完整牌面 */
   .hand.grouped{align-items:flex-start;gap:.18em .26em;max-height:46vh;overflow-y:auto;padding:6px 2px}
   .hand.grouped .col{display:flex;flex-direction:column;align-items:center}
-  .hand.grouped .col .card + .card{margin-top:calc(var(--cw) * -0.94)}   /* 仅露出顶部角标带(~33%牌高)，中央花色藏住 */
+  .hand.grouped .card .corner.br{display:none}
+  .hand.grouped .col .card:not(:last-child) .pip{display:none}
+  .hand.grouped .col .card + .card{margin-top:calc(var(--cw) * -0.78)}   /* 露出量恰好露完整左上角标(~44%牌高)，下方留白 */
   .hand.grouped .card.sel{transform:translateX(.26em);z-index:50;box-shadow:0 .06em .26em rgba(0,0,0,.5)}
   .bar{display:flex;gap:8px;justify-content:center;margin-top:6px}
   .bar.util{margin-top:4px;gap:10px}
