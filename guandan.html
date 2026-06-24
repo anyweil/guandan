@@ -77,7 +77,6 @@
   .card .jlb{position:absolute;left:0;right:0;bottom:.11em;text-align:center;font-size:.2em;font-weight:800;letter-spacing:.12em}
   /* 出牌区小牌（对手出牌展示） */
   .card.mini{--cw:clamp(24px,min(5.8vw,4.6vh),48px)}
-  .card.mini .corner.br{display:none}
   /* 手牌区 */
   .bottom{flex:none;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(0,0,0,.22)}
   /* 手牌区：font-size 即牌宽基准，clamp 随屏宽/屏高动态缩放，适配手机/折叠屏/平板 */
@@ -1230,7 +1229,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 650;
-  const APP_VERSION = 'v10';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v11';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 

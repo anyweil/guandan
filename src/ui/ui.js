@@ -7,7 +7,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 650;
-  const APP_VERSION = 'v10';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v11';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
