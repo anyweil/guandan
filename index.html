@@ -29,6 +29,7 @@
   .hud .lv{background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:8px;padding:3px 9px}
   .hud .lv b{color:var(--gold)}
   .icon{background:rgba(255,255,255,.12);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px}
+  .hud .ver{font-size:10px;color:#9fbcae;opacity:.75;letter-spacing:.5px}
   /* 牌桌 */
   .table{position:relative;flex:1;min-height:0}
   .seat{position:absolute;background:rgba(0,0,0,.30);border:1px solid var(--line);border-radius:10px;
@@ -129,6 +130,7 @@
     <div class="lv" id="hudlv">本局打 <b>2</b></div>
     <div class="lv" id="hudteam">我方 2 · 对方 2</div>
     <div class="icon" id="gear">⚙ 设置</div>
+    <div class="ver" id="appver"></div>
   </div>
 </div>
 
@@ -168,6 +170,7 @@
     <div class="row"><span>下家(右·对手) 水平</span><select id="selE"></select></div>
     <div class="row"><span>上家(左·对手) 水平</span><select id="selW"></select></div>
     <div class="row"><span>起始级牌（打几）</span><select id="selLv"></select></div>
+    <div class="row"><span>深度AI（PIMC，更深但较慢）</span><input type="checkbox" id="chkDeep" style="width:20px;height:20px"></div>
     <button class="pbtn" id="btnNewMatch">开始新整场</button>
     <button class="pbtn ghost" id="btnClose">关闭</button>
   </div>

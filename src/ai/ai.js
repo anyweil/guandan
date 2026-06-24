@@ -207,15 +207,12 @@
     return false;
   }
 
-  // ---------- 决策入口（所有档位共用同一套原则；唯一差异 = 记忆能力，全部经由 mem 体现） ----------
-  function makeAI(name) {
-    const tier = TIER[name] != null ? TIER[name] : 1;
-    return function decide(state, seat) {
-      const level = state.level, hand = state.hands[seat], top = state.current, owner = state.currentOwner;
-      const mem = buildMemory(state, seat, tier, level);
-      return top ? chooseFollow(hand, level, top, owner, state, seat, mem)
-                 : chooseLead(hand, level, state, seat, mem);
-    };
+  // ---------- 启发式决策（默认·快）：所有档位同一原则，差异=记忆，经 mem 体现 ----------
+  function heuristicDecide(state, seat, tier) {
+    const level = state.level, hand = state.hands[seat], top = state.current, owner = state.currentOwner;
+    const mem = buildMemory(state, seat, tier, level);
+    return top ? chooseFollow(hand, level, top, owner, state, seat, mem)
+               : chooseLead(hand, level, state, seat, mem);
   }
 
   // ---------- 领出 ----------
@@ -305,6 +302,168 @@
   }
   // 经复式(运气抵消)对抗扫参确定的阈值
   const BOMB_TH = 12, FOLLOW_KEY = 7, FOLLOW_OPP = 4;
+
+  // ===================== 深度搜索：PIMC（完美信息蒙特卡洛） =====================
+  // 记忆 = 信念：已“记住”的出牌从牌池剔除；对每个候选出牌，采样多种可能的对手手牌、
+  // 各自完美信息模拟到本局结束，取平均收益最高者。记忆越准→采样越真实→评估越准→出牌越强。
+  const PIMC_K = (typeof process !== 'undefined' && process.env && +process.env.PIMC_K) || 24;     // 每个决策的采样次数
+
+  function nextAct(active, s) { let t = (s + 1) % 4, g = 0; while (!active[t] && g++ < 4) t = (t + 1) % 4; return t; }
+
+  // rollout 快速策略：领出=最低一组(不主动拆炸)；跟牌=最小可压；仅对手将走完才炸。
+  function rolloutMove(hand, level, top, oppMin) {
+    const byP = new Map();
+    for (const c of hand) { const p = GD.powerOfCard(c, level); if (!byP.has(p)) byP.set(p, []); byP.get(p).push(c); }
+    const powers = [...byP.keys()].sort((a, b) => a - b);
+    if (!top) {
+      const g = byP.get(powers[0]);
+      return g.slice(0, g.length >= 4 ? 1 : g.length);     // 炸弹组只领1张，不当普通组送出
+    }
+    const beats = movesBeating(hand, level, top);
+    if (!beats.length) return 'pass';
+    const nb = beats.filter(m => !isBomb(m.combo));
+    if (nb.length) { nb.sort((a, b) => a.combo.key - b.combo.key); return nb[0].cards; }
+    if (oppMin <= 2) { beats.sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key); return beats[0].cards; }
+    return 'pass';
+  }
+
+  // 从给定局面用 rollout 策略模拟到本局结束，返回名次顺序 ranks
+  function simFrom(hands, level, turn, current, owner, passes, active, finished) {
+    hands = hands.map(h => h.slice()); active = active.slice(); finished = finished.slice();
+    let guard = 0;
+    const cnt = () => active[0] + active[1] + active[2] + active[3];
+    while (cnt() > 1) {
+      if (++guard > 1500) break;
+      if (!active[turn]) { turn = (turn + 1) % 4; continue; }
+      const leading = current === null;
+      let om = 99; for (const o of [(turn + 1) % 4, (turn + 3) % 4]) if (active[o]) om = Math.min(om, hands[o].length);
+      let mv = rolloutMove(hands[turn], level, current, om);
+      if (mv === 'pass' || !mv) {
+        if (leading) mv = hands[turn].slice(0, 1);
+        else {
+          passes++;
+          const others = cnt() - (active[owner] ? 1 : 0);
+          if (passes >= others) { turn = leadAfter(active, finished, owner); current = null; owner = null; passes = 0; continue; }
+          turn = (turn + 1) % 4; continue;
+        }
+      }
+      const ids = new Set(mv.map(c => c.id));
+      hands[turn] = hands[turn].filter(c => !ids.has(c.id));
+      current = GD.classify(mv, level); owner = turn; passes = 0;
+      if (hands[turn].length === 0) { finished.push(turn); active[turn] = false; if (cnt() <= 1) break; }
+      turn = (turn + 1) % 4;
+    }
+    const last = active.indexOf(true);
+    return finished.concat(last >= 0 ? [last] : []);
+  }
+  function leadAfter(active, finished, owner) {     // 收墩后由谁领出
+    if (active[owner]) return owner;
+    const mate = (owner + 2) % 4;
+    return active[mate] ? mate : nextAct(active, owner);
+  }
+
+  // 应用候选出牌(或 'pass')后模拟到结束，返回 ranks
+  function applyCand(hands, seat, cand, level, active0, finished0, current0, owner0, passes0) {
+    const active = active0.slice(), finished = finished0.slice();
+    let current = current0, owner = owner0, passes = passes0 || 0, turn;
+    const h = hands.map(x => x.slice());
+    const cnt = () => active[0] + active[1] + active[2] + active[3];
+    if (cand === 'pass') {
+      passes++;
+      const others = cnt() - (active[owner] ? 1 : 0);
+      if (passes >= others) { current = null; owner = null; passes = 0; turn = leadAfter(active, finished, owner0); }
+      else turn = nextAct(active, seat);
+    } else {
+      const ids = new Set(cand.map(c => c.id));
+      h[seat] = h[seat].filter(c => !ids.has(c.id));
+      current = GD.classify(cand, level); owner = seat; passes = 0;
+      if (h[seat].length === 0) { finished.push(seat); active[seat] = false; }
+      turn = nextAct(active, seat);
+    }
+    if (cnt() <= 1) { const last = active.indexOf(true); return finished.concat(last >= 0 ? [last] : []); }
+    return simFrom(h, level, turn, current, owner, passes, active, finished);
+  }
+
+  // 收益：本局我方拿头游记 +gain(双下+3/+2/+1)，对方头游记 -gain
+  function dealReward(ranks, seat) {
+    const head = ranks[0], pIdx = ranks.indexOf((head + 2) % 4);
+    const g = pIdx === 1 ? 3 : pIdx === 2 ? 2 : 1;
+    return teamOf(head) === teamOf(seat) ? g : -g;
+  }
+
+  // 候选剪枝：领出每种牌型留最低1~2手（不主动领炸）；跟牌留最小若干 + 最小炸
+  function pruneLead(moves) {
+    const byType = {};
+    for (const m of moves) { if (isBomb(m.combo)) continue; (byType[m.combo.type] = byType[m.combo.type] || []).push(m); }
+    const out = [];
+    for (const t in byType) {
+      const arr = byType[t].sort((a, b) => a.combo.key - b.combo.key);
+      const take = (t === T.SINGLE || t === T.PAIR) ? 2 : 1;
+      for (let i = 0; i < Math.min(take, arr.length); i++) out.push(arr[i].cards);
+    }
+    if (!out.length) out.push(moves.slice().sort((a, b) => a.combo.bombScore - b.combo.bombScore)[0].cards);
+    return out;
+  }
+  function pruneFollow(beats) {
+    const nb = beats.filter(m => !isBomb(m.combo)).sort((a, b) => a.combo.key - b.combo.key);
+    const bombs = beats.filter(m => isBomb(m.combo)).sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key);
+    const out = [];
+    for (let i = 0; i < Math.min(3, nb.length); i++) out.push(nb[i].cards);
+    if (bombs.length) out.push(bombs[0].cards);
+    return out;
+  }
+
+  // PIMC 决策：记忆决定牌池（信念），多次采样对手手牌、模拟到底、取平均收益最高的候选
+  function pimcDecide(state, seat, tier, level, cands) {
+    const myIds = new Set(state.hands[seat].map(c => c.id));
+    const remembered = new Set();
+    for (const c of state.played) if (memSees(tier, c, level)) remembered.add(c.id);
+    const pool = GD.makeDeck().filter(c => !myIds.has(c.id) && !remembered.has(c.id));
+    const others = [0, 1, 2, 3].filter(s => s !== seat);
+    const counts = others.map(o => state.hands[o].length);
+    const finished = state.finished || [];
+    const scores = cands.map(() => 0);
+    for (let k = 0; k < PIMC_K; k++) {
+      const rng = GD.mulberry32((state.played.length * 131 + seat * 17 + k * 1009 + 1) >>> 0);
+      const sh = GD.shuffle(pool, rng);
+      const hands = []; hands[seat] = state.hands[seat];
+      let idx = 0;
+      for (let oi = 0; oi < others.length; oi++) { hands[others[oi]] = sh.slice(idx, idx + counts[oi]); idx += counts[oi]; }
+      for (let ci = 0; ci < cands.length; ci++) {
+        const ranks = applyCand(hands, seat, cands[ci], level, state.active, finished, state.current, state.currentOwner, state.passes);
+        scores[ci] += dealReward(ranks, seat);
+      }
+    }
+    let bi = 0; for (let i = 1; i < cands.length; i++) if (scores[i] > scores[bi]) bi = i;
+    return cands[bi];
+  }
+
+  // ---------- PIMC 深度决策（可选·慢但更深） ----------
+  function pimcMove(state, seat, tier) {
+    const level = state.level, hand = state.hands[seat], top = state.current;
+    let cands;
+    if (top) {
+      const beats = movesBeating(hand, level, top);
+      const out = beats.find(m => m.cards.length === hand.length); if (out) return out.cards;  // 一把走完
+      cands = pruneFollow(beats); cands.push('pass');
+    } else {
+      const moves = allCombos(hand, level);
+      if (!moves.length) return hand.slice(0, 1);
+      const out = moves.filter(m => m.cards.length === hand.length); if (out.length) return strongest(out).cards;
+      cands = pruneLead(moves);
+    }
+    if (cands.length === 1) return cands[0];
+    return pimcDecide(state, seat, tier, level, cands);
+  }
+
+  // ---------- 总入口：默认启发式(快)；opts.deep=true 走 PIMC 深度搜索 ----------
+  function makeAI(name, opts) {
+    const tier = TIER[name] != null ? TIER[name] : 1;
+    const deep = !!(opts && opts.deep);
+    return function decide(state, seat) {
+      return deep ? pimcMove(state, seat, tier) : heuristicDecide(state, seat, tier);
+    };
+  }
 
   // ---------- 自动理牌：把手牌分解为“最少手数”的牌型组合 ----------
   function wildUsed(m, level) { return m.cards.filter(c => GD.isWild(c, level)).length; }

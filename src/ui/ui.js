@@ -7,13 +7,14 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 650;
+  const APP_VERSION = 'v8';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
   // ---------- 状态 ----------
   const M = { levels: { A: 0, B: 0 }, prevRanks: null, startLevelIdx: 0,
     diff: { 1: '中级', 2: '高级', 3: '中级' }, ais: {}, matchWon: null,
-    sortMode: 'power', auto: false, dealNo: 0, autoAI: null };
+    sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false };
   let D = null;                 // 当前一局状态
   let sel = new Set();          // 选中的手牌 id
   let hint = { list: null, idx: -1, sig: '' };
@@ -24,7 +25,7 @@
   function activeCount() { return D.active.filter(Boolean).length; }
   function nextActive(s) { let t = next(s); while (!D.active[t]) t = next(t); return t; }
   function myHandSorted() { return GD.sortHand(D.hands[0], D.level); }
-  function buildAIs() { for (const s of [1, 2, 3]) M.ais[s] = AI.makeAI(M.diff[s]); }
+  function buildAIs() { for (const s of [1, 2, 3]) M.ais[s] = AI.makeAI(M.diff[s], { deep: M.deep }); M.autoAI = null; }
 
   function toast(msg, ms) {
     const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -211,8 +212,8 @@
     const seat = D.turn;
     if (!D.active[seat]) return;
     let decide;
-    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('大师')); }
-    else decide = M.ais[seat] || AI.makeAI(M.diff[seat]);
+    if (seat === 0) { if (!M.auto) return; decide = M.autoAI || (M.autoAI = AI.makeAI('大师', { deep: M.deep })); }
+    else decide = M.ais[seat] || AI.makeAI(M.diff[seat], { deep: M.deep });
     let move;
     try { move = decide(D, seat); } catch (e) { move = 'pass'; }
     if (move === 'pass' || !move) {
@@ -293,10 +294,11 @@
     buildAIs();
     startDeal();
   }
-  function openSettings() { $('setmask').classList.add('show'); }
+  function openSettings() { $('chkDeep').checked = M.deep; $('setmask').classList.add('show'); }
   function applySettingsAndStart() {
     M.diff[2] = $('selN').value; M.diff[1] = $('selE').value; M.diff[3] = $('selW').value;
     M.startLevelIdx = LEVELS.indexOf($('selLv').value);
+    M.deep = $('chkDeep').checked;
     $('setmask').classList.remove('show');
     newMatch();
   }
@@ -307,6 +309,7 @@
     for (const o of opts) { const e = document.createElement('option'); e.textContent = o; if (o === val) e.selected = true; s.appendChild(e); }
   }
   function init() {
+    $('appver').textContent = APP_VERSION;
     fillSelect('selN', DIFFS, M.diff[2]); fillSelect('selE', DIFFS, M.diff[1]); fillSelect('selW', DIFFS, M.diff[3]);
     fillSelect('selLv', LEVELS, '2');
     $('btnPlay').onclick = onPlay; $('btnPass').onclick = onPass; $('btnHint').onclick = onHint;

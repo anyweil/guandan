@@ -63,6 +63,15 @@ console.log('== 对局合法性（各档 AI 跑整场不报错）==');
   } catch (e) { ok(false, name + ' 对局抛错: ' + e.message); }
 });
 
+console.log('== PIMC 深度模式（opts.deep）跑通不报错 ==');
+(function () {
+  try {
+    const d = ['大师', '入门', '大师', '入门'].map(n => AI.makeAI(n, { deep: true }));
+    const r = G.runDeal('5', GD.deal(2024).map(h => h.slice()), 0, d);
+    ok(Array.isArray(r.ranks) && r.ranks.length === 4 && new Set(r.ranks).size === 4, '深度AI(PIMC)单局完成，名次合法(' + r.ranks.join(',') + ')');
+  } catch (e) { ok(false, 'PIMC 深度模式抛错: ' + e.message); }
+})();
+
 console.log('== 强度梯度（复式对局：同一副牌强弱方各打一遍，运气抵消，只比水平）==');
 // 复式法：每副固定牌让 strong 队分别坐 {0,2} 与 {1,3} 各打一遍，统计 strong 拿头游的比例。
 function dupHeadRate(strong, weak, n) {
