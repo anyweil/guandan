@@ -246,10 +246,18 @@
     const nb = moves.filter(m => !isBomb(m.combo)).sort((a, b) => a.combo.key - b.combo.key);
     const bombs = moves.filter(m => isBomb(m.combo)).sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key);
 
-    // 队友正控场：配合让牌（记忆越好→isControl 判断越准，越不会瞎盖队友）
+    // 队友正控场：一般不盖队友（盖了浪费牌力）。记忆越好→isControl 判断越准。
     if (owner != null && teammate(seat) === owner) {
-      const mateClose = state.hands[owner].length <= 6;
-      if (mateClose || isBomb(top) || isControl(top, mem)) return 'pass';
+      if (state.hands[owner].length <= 6) return 'pass';        // 队友快走完→绝不盖，让队友走头游
+      const urgent = mem.oppMin <= 3;                           // 下家(对手)快走完，可能逃掉
+      if (!urgent) {
+        // 不紧迫：绝不送大牌/炸盖队友；仅允许「过一手小牌」接管(如对家出3、我过4/7)
+        if (isBomb(top) || isControl(top, mem)) return 'pass';  // 队友这手已压死对手
+        if (nb.length && nb[0].combo.key <= 10) return nb[0].cards;   // 过小牌(可)
+        return 'pass';                                          // 最小可压都偏大→不为盖队友送大牌
+      }
+      // 紧迫：对手快走完——若队友已压死对手则安心 pass；否则落到正常跟牌，按代价/收益决定是否付大牌或炸
+      if (isControl(top, mem)) return 'pass';
     }
 
     if (nb.length) {
@@ -311,7 +319,7 @@
   function nextAct(active, s) { let t = (s + 1) % 4, g = 0; while (!active[t] && g++ < 4) t = (t + 1) % 4; return t; }
 
   // rollout 快速策略：领出=最低一组(不主动拆炸)；跟牌=最小可压；仅对手将走完才炸。
-  function rolloutMove(hand, level, top, oppMin) {
+  function rolloutMove(hand, level, top, oppMin, mateOwns) {
     const byP = new Map();
     for (const c of hand) { const p = GD.powerOfCard(c, level); if (!byP.has(p)) byP.set(p, []); byP.get(p).push(c); }
     const powers = [...byP.keys()].sort((a, b) => a - b);
@@ -322,7 +330,11 @@
     const beats = movesBeating(hand, level, top);
     if (!beats.length) return 'pass';
     const nb = beats.filter(m => !isBomb(m.combo));
-    if (nb.length) { nb.sort((a, b) => a.combo.key - b.combo.key); return nb[0].cards; }
+    if (nb.length) {
+      nb.sort((a, b) => a.combo.key - b.combo.key);
+      if (mateOwns && oppMin > 3 && nb[0].combo.key > 10) return 'pass';  // 队友控场且不紧迫→不盖队友(只过小牌)
+      return nb[0].cards;
+    }
     if (oppMin <= 2) { beats.sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key); return beats[0].cards; }
     return 'pass';
   }
@@ -337,7 +349,8 @@
       if (!active[turn]) { turn = (turn + 1) % 4; continue; }
       const leading = current === null;
       let om = 99; for (const o of [(turn + 1) % 4, (turn + 3) % 4]) if (active[o]) om = Math.min(om, hands[o].length);
-      let mv = rolloutMove(hands[turn], level, current, om);
+      const mateOwns = (current !== null && owner !== null && (turn + 2) % 4 === owner);
+      let mv = rolloutMove(hands[turn], level, current, om, mateOwns);
       if (mv === 'pass' || !mv) {
         if (leading) mv = hands[turn].slice(0, 1);
         else {
