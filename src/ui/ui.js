@@ -6,15 +6,16 @@
   const GD = window.GD, Game = window.GDGame, AI = window.GDAI;
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
-  const AI_DELAY = 650;
-  const APP_VERSION = 'v11';   // 版本号（与 sw.js VERSION 一起递增）
+  const AI_DELAY = 850;        // AI 出牌节奏（更从容）
+  const APP_VERSION = 'v12';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
   // ---------- 状态 ----------
   const M = { levels: { A: 0, B: 0 }, prevRanks: null, startLevelIdx: 0,
     diff: { 1: '中级', 2: '高级', 3: '中级' }, ais: {}, matchWon: null,
-    sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false };
+    sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false,
+    manualGroups: [], animSeat: null };
   let D = null;                 // 当前一局状态
   let sel = new Set();          // 选中的手牌 id
   let hint = { list: null, idx: -1, sig: '' };
@@ -67,24 +68,27 @@
       seat.classList.toggle('out', !D.active[s]);
     }
     $('diffN').textContent = M.diff[2]; $('diffE').textContent = M.diff[1]; $('diffW').textContent = M.diff[3];
-    // 出牌区
+    // 出牌区（仅刚出牌的那家播放滑入动画）
     for (const s of [0, 1, 2, 3]) {
       const box = $('play' + SEAT_ID[s]); box.innerHTML = '';
-      const lp = D.lastPlayed[s];
-      if (lp === 'pass') { const t = document.createElement('div'); t.className = 'pass-tag'; t.textContent = '不要'; box.appendChild(t); }
-      else if (lp && lp.cards) { for (const c of GD.sortHand(lp.cards, D.level)) box.appendChild(cardEl(c, 'mini')); }
+      const lp = D.lastPlayed[s], anim = (s === M.animSeat);
+      if (lp === 'pass') { const t = document.createElement('div'); t.className = 'pass-tag' + (anim ? ' anim' : ''); t.textContent = '不要'; box.appendChild(t); }
+      else if (lp && lp.cards) { for (const c of GD.sortHand(lp.cards, D.level)) { const el = cardEl(c, 'mini'); if (anim) el.classList.add('anim'); box.appendChild(el); } }
     }
+    M.animSeat = null;
     // 中央提示
     $('mid').innerHTML = D.phase === 'playing'
       ? (D.current ? '' : '<span class="big">' + (D.turn === 0 ? '请你领出' : roleName(D.turn) + ' 领出') + '</span>')
       : '';
-    // 手牌（默认按点值横排；理牌后每个牌型一列纵向叠放）
+    // 手牌：横排(power) / 自动理牌(grouped) / 自定义理牌(manual：用户手工抽出的竖组)
     const hand = $('hand'); hand.innerHTML = '';
+    const manual = (M.sortMode === 'manual' && D.active[0] && M.manualGroups.length > 0);
     const grouped = (M.sortMode === 'grouped' && D.active[0]);
-    hand.classList.toggle('grouped', grouped);
+    hand.classList.toggle('grouped', grouped || manual);
     const mkCard = c => { const el = cardEl(c, sel.has(c.id) ? 'sel' : ''); el.dataset.id = c.id; el.addEventListener('click', () => onCardClick(c.id)); return el; };
-    if (grouped) {
-      for (const col of getGroupedLayout().cols) {
+    const cols = manual ? manualCols() : (grouped ? getGroupedLayout().cols : null);
+    if (cols) {
+      for (const col of cols) {
         const colEl = document.createElement('div'); colEl.className = 'col';
         for (const c of col) colEl.appendChild(mkCard(c));
         hand.appendChild(colEl);
@@ -119,11 +123,41 @@
     return groupCache.layout;
   }
   function onSort() {
+    M.manualGroups = [];          // 切到自动/原序即退出自定义理牌
     M.sortMode = (M.sortMode === 'grouped') ? 'power' : 'grouped';
     $('btnSort').classList.toggle('on', M.sortMode === 'grouped');
     $('btnSort').textContent = (M.sortMode === 'grouped') ? '🎴 原序' : '🎴 理牌';
     render();
     if (M.sortMode === 'grouped' && D && D.active[0]) toast('已整理：' + getGroupedLayout().hands + ' 手可走完');
+  }
+
+  // ---------- 自定义理牌：选中的牌抽出来竖向成一组 ----------
+  function manualCols() {
+    const inGroup = new Set(), cols = [];
+    for (const g of M.manualGroups) {
+      const cards = g.map(id => D.hands[0].find(c => c.id === id)).filter(Boolean);
+      if (cards.length) { cards.forEach(c => inGroup.add(c.id)); cols.push(GD.sortHand(cards, D.level)); }
+    }
+    for (const c of myHandSorted()) if (!inGroup.has(c.id)) cols.push([c]);   // 未成组的散牌各占一列
+    return cols;
+  }
+  function onGroup() {
+    if (!D || !D.active[0]) return;
+    const ids = [...sel];
+    if (!ids.length) {                          // 没选牌 → 复位（清空自定义分组）
+      if (M.manualGroups.length) { M.manualGroups = []; M.sortMode = 'power'; $('btnGroup').classList.remove('on'); render(); toast('已复位自定义理牌'); }
+      else toast('先选要成组的牌，再点「成组」');
+      return;
+    }
+    // 把这些牌从已有组里摘出，再新建一组
+    M.manualGroups = M.manualGroups.map(g => g.filter(id => !ids.includes(id))).filter(g => g.length);
+    M.manualGroups.push(ids);
+    sel.clear();
+    M.sortMode = 'manual';
+    $('btnSort').classList.remove('on'); $('btnSort').textContent = '🎴 理牌';
+    $('btnGroup').classList.add('on');
+    render();
+    toast('已抽出 ' + ids.length + ' 张成一组（可继续选牌成组；空选点「成组」复位）');
   }
   function onAuto() {
     M.auto = !M.auto;
@@ -135,7 +169,7 @@
 
   // ---------- 交互 ----------
   function onCardClick(id) {
-    if (!(D.phase === 'playing' && D.turn === 0 && D.active[0])) return;
+    if (!(D.phase === 'playing' && D.active[0])) return;   // 允许随时选牌（便于组织/自定义理牌；出牌仍受轮次限制）
     if (sel.has(id)) sel.delete(id); else sel.add(id);
     hint.list = null;
     render();
@@ -180,6 +214,9 @@
     for (const c of cards) D.played.push(c);
     D.playLog.push({ seat, cards: cards.slice() });
     D.lastPlayed[seat] = { cards: cards.slice(), combo };
+    if (seat === 0 && M.manualGroups.length)     // 出掉的牌从自定义分组中清除
+      M.manualGroups = M.manualGroups.map(g => g.filter(id => !ids.has(id))).filter(g => g.length);
+    M.animSeat = seat;                            // 触发该家出牌滑入动画
     if (D.hands[seat].length === 0) {
       D.finished.push(seat); D.active[seat] = false;
       if (activeCount() <= 1) { render(); return dealEnd(); }
@@ -187,7 +224,7 @@
     D.turn = nextActive(seat); render(); pump();
   }
   function doPass(seat) {
-    D.passes++; D.lastPlayed[seat] = 'pass';
+    D.passes++; D.lastPlayed[seat] = 'pass'; M.animSeat = seat;
     const others = activeCount() - (D.active[D.currentOwner] ? 1 : 0);
     if (D.passes >= others) { endTrick(); render(); return pump(); }
     D.turn = nextActive(seat); render(); pump();
@@ -240,6 +277,9 @@
     D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
       finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null], phase: 'playing' };
     sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
+    M.manualGroups = []; M.animSeat = null;
+    if (M.sortMode === 'manual') M.sortMode = 'power';
+    $('btnGroup').classList.remove('on');
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();
     if (tributeMsg) toast(tributeMsg, 2600);
@@ -313,7 +353,7 @@
     fillSelect('selN', DIFFS, M.diff[2]); fillSelect('selE', DIFFS, M.diff[1]); fillSelect('selW', DIFFS, M.diff[3]);
     fillSelect('selLv', LEVELS, '2');
     $('btnPlay').onclick = onPlay; $('btnPass').onclick = onPass; $('btnHint').onclick = onHint;
-    $('btnSort').onclick = onSort; $('btnAuto').onclick = onAuto;
+    $('btnSort').onclick = onSort; $('btnAuto').onclick = onAuto; $('btnGroup').onclick = onGroup;
     $('btnNext').onclick = onNext;
     $('gear').onclick = openSettings; $('btnClose').onclick = () => $('setmask').classList.remove('show');
     $('btnNewMatch').onclick = applySettingsAndStart;

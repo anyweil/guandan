@@ -97,8 +97,15 @@
   .bar.util{margin-top:4px;gap:10px}
   .util-btn{background:rgba(255,255,255,.14);color:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
   .util-btn.on{background:var(--gold);color:#3a2c06;border-color:var(--gold)}
-  .play .card.mini{animation:pop .22s ease-out}
-  @keyframes pop{from{opacity:0;transform:translateY(-7px) scale(.9)}to{opacity:1;transform:none}}
+  /* 出牌动画：各家从自己方向滑入并放大，过程更有节奏（仅刚出牌的那家播放） */
+  .play-N .card.mini.anim,.play-N .pass-tag.anim{animation:slideN .42s cubic-bezier(.2,.85,.3,1)}
+  .play-S .card.mini.anim,.play-S .pass-tag.anim{animation:slideS .42s cubic-bezier(.2,.85,.3,1)}
+  .play-E .card.mini.anim,.play-E .pass-tag.anim{animation:slideE .42s cubic-bezier(.2,.85,.3,1)}
+  .play-W .card.mini.anim,.play-W .pass-tag.anim{animation:slideW .42s cubic-bezier(.2,.85,.3,1)}
+  @keyframes slideN{from{opacity:0;transform:translateY(-34px) scale(.72)}to{opacity:1;transform:none}}
+  @keyframes slideS{from{opacity:0;transform:translateY(34px) scale(.72)}to{opacity:1;transform:none}}
+  @keyframes slideE{from{opacity:0;transform:translateX(34px) scale(.72)}to{opacity:1;transform:none}}
+  @keyframes slideW{from{opacity:0;transform:translateX(-34px) scale(.72)}to{opacity:1;transform:none}}
   .bar button{font:inherit;font-weight:700;border:none;border-radius:9px;padding:9px 18px;font-size:14px;cursor:pointer}
   .bar .play-btn{background:var(--gold);color:#3a2c06}
   .bar .pass-btn{background:#c44;color:#fff}
@@ -150,6 +157,7 @@
   <div class="hand" id="hand"></div>
   <div class="bar util">
     <button class="util-btn" id="btnSort">🎴 理牌</button>
+    <button class="util-btn" id="btnGroup">✋ 成组</button>
     <button class="util-btn" id="btnAuto">🤖 托管</button>
   </div>
   <div class="bar">
