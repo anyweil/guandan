@@ -29,7 +29,7 @@
   .hud .lv{background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:8px;padding:3px 9px}
   .hud .lv b{color:var(--gold)}
   .icon{background:rgba(255,255,255,.12);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px}
-  .hud .ver{font-size:10px;color:#9fbcae;opacity:.75;letter-spacing:.5px}
+  .ttl .ver{font-size:10px;color:#9fbcae;opacity:.75;letter-spacing:.5px;font-weight:400}
   /* 牌桌 */
   .table{position:relative;flex:1;min-height:0}
   .seat{position:absolute;background:rgba(0,0,0,.30);border:1px solid var(--line);border-radius:10px;
@@ -124,13 +124,12 @@
 </head>
 <body>
 <div class="top">
-  <div class="ttl">掼 蛋 <span class="s">· Guandan</span></div>
+  <div class="ttl">掼 蛋 <span class="s">· Guandan</span> <span class="ver" id="appver"></span></div>
   <div class="hud">
     <div class="lv" id="hudno">第 1 局</div>
     <div class="lv" id="hudlv">本局打 <b>2</b></div>
     <div class="lv" id="hudteam">我方 2 · 对方 2</div>
     <div class="icon" id="gear">⚙ 设置</div>
-    <div class="ver" id="appver"></div>
   </div>
 </div>
 
