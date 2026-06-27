@@ -322,11 +322,12 @@
       const other = mem.opps[0] === owner ? mem.opps[1] : mem.opps[0];
       if (oppDanger(state, mem, other) > oppDanger(state, mem, owner) + 4 && state.hands[owner].length >= 6) return false;
     }
-    if (oppMin <= 3) return true;                             // 3张很危急→炸
-    if (oppMin === 4) return ownerIsOpp && state.hands[owner].length <= 4;  // 4张:仅当控场对手剩4(即将走完)才炸，否则不炸
-    if (oppMin <= 7) return true;                             // 5/6/7张:一般炸(夺权、防其走小)
-    // 8/9张:仅当记忆预测对手可能"成炸+一手"即将走完（外面高威胁材料多→可能在对手手里成炸）
-    if (oppMin <= 9) return highMaterial(mem) * mem.oppShare >= 5;
+    if (oppMin <= 3) return true;                             // 对手剩≤3张很危急→炸拦截
+    // 对手剩 4~7 张：只有"炸了对自己划算"才炸——是对手控场、且我也接近走完(炸完能顺势抢风走牌)。
+    //   早期 / 我手数还多时，绝不为压一手小牌白费炸弹（代价太大，留着拦截真威胁）。
+    if (oppMin <= 7) return ownerIsOpp && myPlays <= 4;
+    // 8/9张：更要我很接近走完，且记忆预测对手可能"成炸+一手"即将走完
+    if (oppMin <= 9) return ownerIsOpp && myPlays <= 3 && highMaterial(mem) * mem.oppShare >= 5;
     return false;
   }
   const FOLLOW_KEY = 7, FOLLOW_OPP = 4;   // 跟牌纪律阈值（复式扫参确定）
@@ -357,8 +358,8 @@
       if (mateOwns && oppMin > 3 && (nb[0].combo.key > top.key + 3 || nb[0].combo.key > 10)) return 'pass';
       return nb[0].cards;
     }
-    // 仅能炸：按对手张数口径
-    if (oppMin <= 3 || (oppMin >= 5 && oppMin <= 7)) {
+    // 仅能炸：只在对手即将走完(≤3张)才炸——别为压小牌早早费炸（与启发式同口径）
+    if (oppMin <= 3) {
       beats.sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key);
       return beats[0].cards;
     }
