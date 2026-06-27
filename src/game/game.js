@@ -142,16 +142,17 @@
     }
     return best;
   }
-  function returnCard(hand, level) {             // 还贡：一张 ≤10 点的牌（取最小）
-    let pick = null;
-    for (const c of hand) {
-      if (GD.isJoker(c)) continue;
-      const v = GD.naturalRank(c.rank);
-      if (v > 10) continue;
-      if (!pick || GD.powerOfCard(c, level) < GD.powerOfCard(pick, level)) pick = c;
-    }
-    if (!pick) for (const c of hand) if (!GD.isJoker(c)) { pick = pick || c; } // 兜底
-    return pick;
+  function returnCard(hand, level) {             // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10);
+    if (!small.length) return hand.find(c => !GD.isJoker(c)) || hand[0]; // 兜底
+    const cnt = {};
+    for (const c of hand) if (!GD.isJoker(c)) cnt[c.rank] = (cnt[c.rank] || 0) + 1;
+    small.sort((a, b) => {
+      const ia = cnt[a.rank] === 1 ? 0 : 1, ib = cnt[b.rank] === 1 ? 0 : 1;
+      if (ia !== ib) return ia - ib;                                   // 孤张优先（削弱对手又不拆己方结构）
+      return GD.powerOfCard(a, level) - GD.powerOfCard(b, level);      // 再取最小点
+    });
+    return small[0];
   }
   function move1(fromHand, toHand, card) { removeCards(fromHand, [card]); toHand.push(card); }
 

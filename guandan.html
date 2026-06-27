@@ -638,16 +638,17 @@
     }
     return best;
   }
-  function returnCard(hand, level) {             // 还贡：一张 ≤10 点的牌（取最小）
-    let pick = null;
-    for (const c of hand) {
-      if (GD.isJoker(c)) continue;
-      const v = GD.naturalRank(c.rank);
-      if (v > 10) continue;
-      if (!pick || GD.powerOfCard(c, level) < GD.powerOfCard(pick, level)) pick = c;
-    }
-    if (!pick) for (const c of hand) if (!GD.isJoker(c)) { pick = pick || c; } // 兜底
-    return pick;
+  function returnCard(hand, level) {             // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10);
+    if (!small.length) return hand.find(c => !GD.isJoker(c)) || hand[0]; // 兜底
+    const cnt = {};
+    for (const c of hand) if (!GD.isJoker(c)) cnt[c.rank] = (cnt[c.rank] || 0) + 1;
+    small.sort((a, b) => {
+      const ia = cnt[a.rank] === 1 ? 0 : 1, ib = cnt[b.rank] === 1 ? 0 : 1;
+      if (ia !== ib) return ia - ib;                                   // 孤张优先（削弱对手又不拆己方结构）
+      return GD.powerOfCard(a, level) - GD.powerOfCard(b, level);      // 再取最小点
+    });
+    return small[0];
   }
   function move1(fromHand, toHand, card) { removeCards(fromHand, [card]); toHand.push(card); }
 
@@ -959,7 +960,9 @@
     if (goOut.length) return strongest(goOut).cards;             // 能一把走完→走完
     const nb = moves.filter(m => !isBomb(m.combo));
     const pool = nb.length ? nb : moves;
-    const mateClose = state.hands[teammate(seat)].length <= 4;
+    const mateCnt = state.hands[teammate(seat)].length;
+    const support = mateCnt <= 4 || mateCnt + 5 <= hand.length;   // 队友将走完 / 领先我≥5张 → 帮队友(领小让路)
+    const downLow = state.hands[next(seat)].length <= 5;          // 下家(对手)是否牌少
     let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
@@ -972,7 +975,9 @@
       // 逢人配(红桃主牌)别浪费在小非炸组合上——留着配炸/同花顺
       const w = m.cards.filter(c => GD.isWild(c, level)).length;
       if (w > 0) sc -= 2 * w;
-      if (mateClose) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;     // 队友将走→领小让路
+      // 吊下家：下家牌少时，别用易被其接走的小单/小对去喂他
+      if (downLow && (t === T.SINGLE || t === T.PAIR) && k <= 10) sc -= 2.5;
+      if (support) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;       // 帮队友→领小让路、不抢头游
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
     return best.cards;
@@ -1259,7 +1264,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v14';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v15';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 

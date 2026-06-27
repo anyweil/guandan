@@ -223,7 +223,9 @@
     if (goOut.length) return strongest(goOut).cards;             // 能一把走完→走完
     const nb = moves.filter(m => !isBomb(m.combo));
     const pool = nb.length ? nb : moves;
-    const mateClose = state.hands[teammate(seat)].length <= 4;
+    const mateCnt = state.hands[teammate(seat)].length;
+    const support = mateCnt <= 4 || mateCnt + 5 <= hand.length;   // 队友将走完 / 领先我≥5张 → 帮队友(领小让路)
+    const downLow = state.hands[next(seat)].length <= 5;          // 下家(对手)是否牌少
     let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
@@ -236,7 +238,9 @@
       // 逢人配(红桃主牌)别浪费在小非炸组合上——留着配炸/同花顺
       const w = m.cards.filter(c => GD.isWild(c, level)).length;
       if (w > 0) sc -= 2 * w;
-      if (mateClose) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;     // 队友将走→领小让路
+      // 吊下家：下家牌少时，别用易被其接走的小单/小对去喂他
+      if (downLow && (t === T.SINGLE || t === T.PAIR) && k <= 10) sc -= 2.5;
+      if (support) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;       // 帮队友→领小让路、不抢头游
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
     return best.cards;
