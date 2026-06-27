@@ -963,11 +963,16 @@
     let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
+      const t = m.combo.type, k = m.combo.key;
       // 核心：出后手数最少；并“留高打低”——优先领小牌、把大牌留作回手与控场
-      let sc = -estPlays(rem, level) * 10 - m.combo.key * 0.3;
-      if (m.combo.type === T.TUBE || m.combo.type === T.PLATE) sc += 3;   // 木板/钢板早出对手难跟
-      if (m.combo.type === T.STRAIGHT) sc -= 2;                           // 顺子留后
-      if (mateClose) sc += (m.combo.type === T.SINGLE ? 2 : 0) - m.combo.key * 0.1;  // 队友将走→领小让路
+      let sc = -estPlays(rem, level) * 10 - k * 0.3;
+      if (t === T.TUBE || t === T.PLATE) sc += 3;                  // 木板/钢板早出对手难跟
+      else if (t === T.STRAIGHT) sc += (k <= 8 ? 1.5 : -2.5);      // 小顺/无用顺早出腾手；大顺留后(对手接不动)
+      else if (t === T.SINGLE && k <= 8) sc += 1;                  // 弱小单早出腾手("要上游，先弱单")
+      // 逢人配(红桃主牌)别浪费在小非炸组合上——留着配炸/同花顺
+      const w = m.cards.filter(c => GD.isWild(c, level)).length;
+      if (w > 0) sc -= 2 * w;
+      if (mateClose) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;     // 队友将走→领小让路
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
     return best.cards;
@@ -989,7 +994,8 @@
       if (!urgent) {
         // 不紧迫：绝不送大牌/炸盖队友；仅允许「过一手小牌」接管(如对家出3、我过4/7)
         if (isBomb(top) || isControl(top, mem)) return 'pass';  // 队友这手已压死对手
-        if (nb.length && nb[0].combo.key <= 10) return nb[0].cards;   // 过小牌(可)
+        // 过小牌(可)：跟张不超过队友点数+3 且 ≤10（如队友出3，最多过到6）
+        if (nb.length && nb[0].combo.key <= 10 && nb[0].combo.key <= top.key + 3) return nb[0].cards;
         return 'pass';                                          // 最小可压都偏大→不为盖队友送大牌
       }
       // 紧迫：对手快走完——若队友已压死对手则安心 pass；否则落到正常跟牌，按代价/收益决定是否付大牌或炸
@@ -1029,23 +1035,26 @@
   // 外面(未被记忆记录)的高威胁材料：K 及以上 + 级牌 + 大小王。记忆越好→记录越多→此值越真实(不虚高)
   function highMaterial(mem) { let m = 0; for (let q = 13; q <= 17; q++) m += outsideCopies(mem, q); return m; }
 
-  // ---------- 是否出炸（所有档位同一口径；“威胁感”由记忆驱动：记忆差→虚高→滥炸浪费） ----------
+  // ---------- 是否出炸（按规格书：张数口径 + 记忆预测；同花顺序由引擎合法性兜底） ----------
+  // 注：本函数仅在"已无划算的非炸跟牌"时被调用；top 多为对手所出，bombs 已是合法可压的炸。
   function shouldBomb(state, seat, hand, level, mem, owner) {
     const oppMin = mem.oppMin, myPlays = estPlays(hand, level);
-    if (oppMin <= 1) return true;                             // 对手即将赢→必炸
-    if (myPlays <= 2) return true;                            // 我即将走完→抢风必炸
+    if (oppMin <= 2) return true;                             // 对手可能1手走完→必炸
+    if (myPlays <= 2) return true;                            // 我也即将走完→抢风必炸
     const ownerIsOpp = owner != null && teamOf(owner) !== teamOf(seat);
-    // 取舍：放掉不紧迫/已虚的强对手，省炸专防真威胁（宗师用 dumped 修正）
+    // 强弱取舍：放掉不紧迫的强对手，省炸专防真威胁（宗师用 dumped 修正威胁度）
     if (ownerIsOpp && mem.opps.length === 2) {
       const other = mem.opps[0] === owner ? mem.opps[1] : mem.opps[0];
       if (oppDanger(state, mem, other) > oppDanger(state, mem, owner) + 4 && state.hands[owner].length >= 6) return false;
     }
-    // 威胁感：对手牌越少越危险 + 外面高材料越多越危险（记忆好→材料估得准偏低→省炸；记忆差→虚高→滥炸）
-    const danger = (15 - oppMin) + highMaterial(mem) * mem.oppShare * 0.6 + (ownerIsOpp ? 2 : 0);
-    return danger >= BOMB_TH;
+    if (oppMin <= 3) return true;                             // 3张很危急→炸
+    if (oppMin === 4) return ownerIsOpp && state.hands[owner].length <= 4;  // 4张:仅当控场对手剩4(即将走完)才炸，否则不炸
+    if (oppMin <= 7) return true;                             // 5/6/7张:一般炸(夺权、防其走小)
+    // 8/9张:仅当记忆预测对手可能"成炸+一手"即将走完（外面高威胁材料多→可能在对手手里成炸）
+    if (oppMin <= 9) return highMaterial(mem) * mem.oppShare >= 5;
+    return false;
   }
-  // 经复式(运气抵消)对抗扫参确定的阈值
-  const BOMB_TH = 12, FOLLOW_KEY = 7, FOLLOW_OPP = 4;
+  const FOLLOW_KEY = 7, FOLLOW_OPP = 4;   // 跟牌纪律阈值（复式扫参确定）
 
   // ===================== 深度搜索：PIMC（完美信息蒙特卡洛） =====================
   // 记忆 = 信念：已“记住”的出牌从牌池剔除；对每个候选出牌，采样多种可能的对手手牌、
@@ -1250,7 +1259,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v13';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v14';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
