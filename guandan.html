@@ -607,13 +607,14 @@
       state.log.push({ seat, type: combo.type, key: combo.key, n: move.length });
       if (state.hands[seat].length === 0) {
         state.finished.push(seat); state.active[seat] = false;
+        // 双下提前结束：已走2家且同队 → 该队双下、名次已定，剩两家同为对队，不必再打
+        if (state.finished.length === 2 && teamOf(state.finished[0]) === teamOf(state.finished[1])) break;
         if (activeCount(state) <= 1) break;
       }
       state.turn = next(seat);
     }
-    // 收尾：剩余一家为末游
-    const lastSeat = state.active.indexOf(true);
-    const ranks = state.finished.concat(lastSeat >= 0 ? [lastSeat] : []);
+    // 收尾：把剩余未走的座位按序补进名次（正常剩1家=末游；双下提前结束剩2家=对队的三/末游）
+    const ranks = state.finished.concat([0, 1, 2, 3].filter(s => state.active[s]));
     return { ranks, log: state.log };
 
     function endTrick(st) {
@@ -1007,7 +1008,8 @@
     const pool = nb.length ? nb : moves;
     const mateCnt = state.hands[teammate(seat)].length;
     const support = mateCnt <= 4 || mateCnt + 5 <= hand.length;   // 队友将走完 / 领先我≥5张 → 帮队友(领小让路)
-    const downLow = state.hands[next(seat)].length <= 5;          // 下家(对手)是否牌少
+    const downCnt = state.hands[next(seat)].length;               // 下家(紧邻对手)张数
+    const oppOne = opponentsOf(seat).some(o => state.hands[o].length <= 1);  // 有对手仅剩1张(即将走完)
     let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
@@ -1018,8 +1020,14 @@
       else if (t === T.STRAIGHT) sc += (k <= 8 ? 1.5 : -2.5);      // 小顺/无用顺早出腾手；大顺留后(对手接不动)
       else if (t === T.SINGLE && k <= 8) sc += 1;                  // 弱小单早出腾手("要上游，先弱单")
       sc -= wasteCost(m, level, k);                               // 别把级牌/逢人配当廉价配角(三带二的"二"、顺子填缺等)
-      // 吊下家：下家牌少时，别用易被其接走的小单/小对去喂他
-      if (downLow && (t === T.SINGLE || t === T.PAIR) && k <= 10) sc -= 2.5;
+      // 卡住即将走完的对手：有对手仅剩1张时——绝不领单张(它正好出最后一张走完)；
+      //   领对子/三/连对/结构它1张接不动→被卡住，强烈优先。
+      if (oppOne) {
+        if (t === T.SINGLE) sc -= Math.max(6, 16 - k);            // 领单张冒险，越小越危险
+        else sc += 5;                                             // 多张牌型→1张对手接不动→安全
+      } else if (downCnt <= 5 && (t === T.SINGLE || t === T.PAIR) && k <= 10) {
+        sc -= 2.5;                                                // 吊下家：下家牌少别用小单/小对喂他
+      }
       if (support) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;       // 帮队友→领小让路、不抢头游
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
@@ -1324,7 +1332,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v22';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v23';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1555,7 +1563,9 @@
     M.animSeat = seat;                            // 触发该家出牌滑入动画
     if (D.hands[seat].length === 0) {
       D.finished.push(seat); D.active[seat] = false;
-      if (activeCount() <= 1) { render(); return dealEnd(); }
+      // 双下提前结束：已走2家且同队→名次已定，直接收牌；否则剩1家也结束
+      const doubleDown = D.finished.length === 2 && teamOf(D.finished[0]) === teamOf(D.finished[1]);
+      if (doubleDown || activeCount() <= 1) { render(); return dealEnd(); }
     }
     D.turn = nextActive(seat); render(); pump();
   }
@@ -1619,8 +1629,8 @@
     $('btnGroup').classList.remove('on');
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();
-    if (msg) toast(msg, 3000);
-    pump();
+    if (msg) { toast(msg, 4800); setTimeout(pump, 1200); }   // 进贡/抗贡提示停久点、稍候再让AI出牌，便于看清
+    else pump();
   }
 
   // 交互式进贡 + 还贡：座0(玩家)需人工选则弹层；AI 自动。完成后回调(leader, 描述)
@@ -1689,8 +1699,7 @@
   }
 
   function dealEnd() {
-    const lastSeat = D.active.indexOf(true);
-    const ranks = D.finished.concat(lastSeat >= 0 ? [lastSeat] : []);
+    const ranks = D.finished.concat([0, 1, 2, 3].filter(s => D.active[s]));  // 补全未走的座位(正常剩1家/双下剩2家)
     D.phase = 'dealEnd';
     const sc = Game.scoreDeal(ranks);
     const adv = Game.advanceLevel(M.levels[sc.headTeam], sc.gain, true);

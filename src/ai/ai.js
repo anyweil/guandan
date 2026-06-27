@@ -233,7 +233,8 @@
     const pool = nb.length ? nb : moves;
     const mateCnt = state.hands[teammate(seat)].length;
     const support = mateCnt <= 4 || mateCnt + 5 <= hand.length;   // 队友将走完 / 领先我≥5张 → 帮队友(领小让路)
-    const downLow = state.hands[next(seat)].length <= 5;          // 下家(对手)是否牌少
+    const downCnt = state.hands[next(seat)].length;               // 下家(紧邻对手)张数
+    const oppOne = opponentsOf(seat).some(o => state.hands[o].length <= 1);  // 有对手仅剩1张(即将走完)
     let best = null, bestSc = -Infinity;
     for (const m of pool) {
       const rem = removeSig(hand, m.cards);
@@ -244,8 +245,14 @@
       else if (t === T.STRAIGHT) sc += (k <= 8 ? 1.5 : -2.5);      // 小顺/无用顺早出腾手；大顺留后(对手接不动)
       else if (t === T.SINGLE && k <= 8) sc += 1;                  // 弱小单早出腾手("要上游，先弱单")
       sc -= wasteCost(m, level, k);                               // 别把级牌/逢人配当廉价配角(三带二的"二"、顺子填缺等)
-      // 吊下家：下家牌少时，别用易被其接走的小单/小对去喂他
-      if (downLow && (t === T.SINGLE || t === T.PAIR) && k <= 10) sc -= 2.5;
+      // 卡住即将走完的对手：有对手仅剩1张时——绝不领单张(它正好出最后一张走完)；
+      //   领对子/三/连对/结构它1张接不动→被卡住，强烈优先。
+      if (oppOne) {
+        if (t === T.SINGLE) sc -= Math.max(6, 16 - k);            // 领单张冒险，越小越危险
+        else sc += 5;                                             // 多张牌型→1张对手接不动→安全
+      } else if (downCnt <= 5 && (t === T.SINGLE || t === T.PAIR) && k <= 10) {
+        sc -= 2.5;                                                // 吊下家：下家牌少别用小单/小对喂他
+      }
       if (support) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;       // 帮队友→领小让路、不抢头游
       if (sc > bestSc) { bestSc = sc; best = m; }
     }

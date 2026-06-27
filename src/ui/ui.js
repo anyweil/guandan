@@ -7,7 +7,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v22';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v23';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -238,7 +238,9 @@
     M.animSeat = seat;                            // 触发该家出牌滑入动画
     if (D.hands[seat].length === 0) {
       D.finished.push(seat); D.active[seat] = false;
-      if (activeCount() <= 1) { render(); return dealEnd(); }
+      // 双下提前结束：已走2家且同队→名次已定，直接收牌；否则剩1家也结束
+      const doubleDown = D.finished.length === 2 && teamOf(D.finished[0]) === teamOf(D.finished[1]);
+      if (doubleDown || activeCount() <= 1) { render(); return dealEnd(); }
     }
     D.turn = nextActive(seat); render(); pump();
   }
@@ -302,8 +304,8 @@
     $('btnGroup').classList.remove('on');
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();
-    if (msg) toast(msg, 3000);
-    pump();
+    if (msg) { toast(msg, 4800); setTimeout(pump, 1200); }   // 进贡/抗贡提示停久点、稍候再让AI出牌，便于看清
+    else pump();
   }
 
   // 交互式进贡 + 还贡：座0(玩家)需人工选则弹层；AI 自动。完成后回调(leader, 描述)
@@ -372,8 +374,7 @@
   }
 
   function dealEnd() {
-    const lastSeat = D.active.indexOf(true);
-    const ranks = D.finished.concat(lastSeat >= 0 ? [lastSeat] : []);
+    const ranks = D.finished.concat([0, 1, 2, 3].filter(s => D.active[s]));  // 补全未走的座位(正常剩1家/双下剩2家)
     D.phase = 'dealEnd';
     const sc = Game.scoreDeal(ranks);
     const adv = Game.advanceLevel(M.levels[sc.headTeam], sc.gain, true);

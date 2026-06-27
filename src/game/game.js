@@ -102,13 +102,14 @@
       state.log.push({ seat, type: combo.type, key: combo.key, n: move.length });
       if (state.hands[seat].length === 0) {
         state.finished.push(seat); state.active[seat] = false;
+        // 双下提前结束：已走2家且同队 → 该队双下、名次已定，剩两家同为对队，不必再打
+        if (state.finished.length === 2 && teamOf(state.finished[0]) === teamOf(state.finished[1])) break;
         if (activeCount(state) <= 1) break;
       }
       state.turn = next(seat);
     }
-    // 收尾：剩余一家为末游
-    const lastSeat = state.active.indexOf(true);
-    const ranks = state.finished.concat(lastSeat >= 0 ? [lastSeat] : []);
+    // 收尾：把剩余未走的座位按序补进名次（正常剩1家=末游；双下提前结束剩2家=对队的三/末游）
+    const ranks = state.finished.concat([0, 1, 2, 3].filter(s => state.active[s]));
     return { ranks, log: state.log };
 
     function endTrick(st) {
