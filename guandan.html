@@ -837,14 +837,14 @@
     if (want(T.TRIPLE_PAIR)) {
       for (const a of GD.RANKS) {
         const ca = (idx.byRank[a] || []).length, wA = Math.max(0, 3 - ca); if (wA > W) continue;
-        // 选一个对子点 b：优先自身≥2不耗逢人配，其次最小
+        // 选对子点 b：尽量「不耗逢人配 + 点数最低」——别把级牌(power15)/逢人配当廉价的"二"
         let chosen = null;
         for (const b of GD.RANKS) {
           if (b === a) continue;
           const cb = (idx.byRank[b] || []).length, wB = Math.max(0, 2 - cb);
           if (wA + wB > W) continue;
-          if (!chosen || wB < chosen.wB) chosen = { b, cb, wB };
-          if (wB === 0) break;
+          const score = wB * 1000 + GD.powerOfRank(b, level);   // 先不耗逢人配，再点数最低(级牌15被压到很后)
+          if (!chosen || score < chosen.score) chosen = { b, cb, wB, score };
         }
         if (!chosen) continue;
         const tri = (idx.byRank[a] || []).slice(0, 3).concat(idx.wilds.slice(0, wA));
@@ -925,6 +925,14 @@
   function removeSig(hand, cards) { const ids = new Set(cards.map(c => c.id)); return hand.filter(c => !ids.has(c.id)); }
   function opponentsOf(seat) { return [next(seat), next(next(seat))].filter(s => teamOf(s) !== teamOf(seat)); }
   function strongest(moves) { return moves.slice().sort((a, b) => b.combo.key - a.combo.key)[0]; }
+  // 把级牌(power15)/逢人配当"廉价配角"(三带二的二、顺子/连对填缺)的浪费代价；
+  //   本手主点本就是级牌(key=15) 或 炸/同花顺(逢人配本就该配) 时不罚。
+  function wasteCost(m, level, key) {
+    if (isBomb(m.combo) || key === 15) return 0;
+    let lv = 0, w = 0;
+    for (const c of m.cards) { if (GD.isWild(c, level)) w++; else if (c.rank === level) lv++; }
+    return lv * 5 + w * 12;
+  }
 
   // ---------- 记忆能力（按档位决定能“数清”哪些已出牌） ----------
   // 0入门:无 | 1中级:王+级牌 | 2高级:+所有≥10 | 3大师:全部 | 4宗师:全部+谁出
@@ -1009,9 +1017,7 @@
       if (t === T.TUBE || t === T.PLATE) sc += 3;                  // 木板/钢板早出对手难跟
       else if (t === T.STRAIGHT) sc += (k <= 8 ? 1.5 : -2.5);      // 小顺/无用顺早出腾手；大顺留后(对手接不动)
       else if (t === T.SINGLE && k <= 8) sc += 1;                  // 弱小单早出腾手("要上游，先弱单")
-      // 逢人配(红桃主牌)别浪费在小非炸组合上——留着配炸/同花顺
-      const w = m.cards.filter(c => GD.isWild(c, level)).length;
-      if (w > 0) sc -= 2 * w;
+      sc -= wasteCost(m, level, k);                               // 别把级牌/逢人配当廉价配角(三带二的"二"、顺子填缺等)
       // 吊下家：下家牌少时，别用易被其接走的小单/小对去喂他
       if (downLow && (t === T.SINGLE || t === T.PAIR) && k <= 10) sc -= 2.5;
       if (support) sc += (t === T.SINGLE ? 2 : 0) - k * 0.1;       // 帮队友→领小让路、不抢头游
@@ -1059,6 +1065,7 @@
       let sc = -estPlays(rem, level) * 10 - m.combo.key * 0.05;
       if (isControl(m.combo, mem)) sc += 3;                      // 这手压下去对手反压不动→赢墩夺权(记忆好才认得出)
       if (hasLock(rem, level, mem)) sc += 2;                     // 出完仍有回手
+      sc -= wasteCost(m, level, m.combo.key);                   // 别把级牌/逢人配当廉价配角
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
     // 跟牌纪律（记忆驱动）：这手最小可压若压不死对手(非绝张、会被反压)、又是较大的单/对、且我方不紧迫，
@@ -1319,7 +1326,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v18';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v19';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
