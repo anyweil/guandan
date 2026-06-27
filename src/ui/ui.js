@@ -7,7 +7,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v23';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v24';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -131,7 +131,7 @@
     return groupCache.layout;
   }
   function onSort() {
-    if (!D || D.phase !== 'playing') return;
+    if (!D || (D.phase !== 'playing' && D.phase !== 'tributeReturn')) return;   // 还贡阶段也可先理牌
     M.manualGroups = [];          // 切到自动/原序即退出自定义理牌
     M.sortMode = (M.sortMode === 'grouped') ? 'power' : 'grouped';
     $('btnSort').classList.toggle('on', M.sortMode === 'grouped');

@@ -1,5 +1,5 @@
 /* 掼蛋 PWA Service Worker —— 预缓存全部资源，离线可玩；改版只需提升 VERSION。 */
-const VERSION = 'guandan-v23';
+const VERSION = 'guandan-v24';
 // 相对 SW 所在目录解析，兼容 GitHub Pages 子路径（/仓库名/）
 const ASSETS = [
   '.', 'index.html', 'manifest.webmanifest',
