@@ -1319,7 +1319,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v17';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v18';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1413,6 +1413,13 @@
   }
 
   function updateControls() {
+    if (D && D.phase === 'tributeReturn') {              // 还贡阶段：出牌键变“确定还贡”
+      $('btnPlay').textContent = '确定还贡'; $('btnPlay').disabled = sel.size === 0;
+      $('btnHint').disabled = true; $('btnPass').disabled = true;
+      $('turnhint').textContent = '还贡：点一张 ≤10 的牌（不能还刚收到的），再点「确定还贡」';
+      return;
+    }
+    $('btnPlay').textContent = '出牌';
     const myTurn = D && D.phase === 'playing' && D.turn === 0 && D.active[0] && !M.auto;
     $('btnPlay').disabled = !myTurn;
     $('btnHint').disabled = !myTurn;
@@ -1436,6 +1443,7 @@
     return groupCache.layout;
   }
   function onSort() {
+    if (!D || D.phase !== 'playing') return;
     M.manualGroups = [];          // 切到自动/原序即退出自定义理牌
     M.sortMode = (M.sortMode === 'grouped') ? 'power' : 'grouped';
     $('btnSort').classList.toggle('on', M.sortMode === 'grouped');
@@ -1455,7 +1463,7 @@
     return cols;
   }
   function onGroup() {
-    if (!D || !D.active[0]) return;
+    if (!D || D.phase !== 'playing' || !D.active[0]) return;
     const ids = [...sel];
     if (!ids.length) {                          // 没选牌 → 复位（清空自定义分组）
       if (M.manualGroups.length) { M.manualGroups = []; M.sortMode = 'power'; $('btnGroup').classList.remove('on'); render(); toast('已复位自定义理牌'); }
@@ -1473,6 +1481,7 @@
     toast('已抽出 ' + ids.length + ' 张成一组（可继续选牌成组；空选点「成组」复位）');
   }
   function onAuto() {
+    if (!D || D.phase !== 'playing') return;
     M.auto = !M.auto;
     $('btnAuto').classList.toggle('on', M.auto);
     $('btnAuto').textContent = M.auto ? '🤖 取消托管' : '🤖 托管';
@@ -1482,6 +1491,14 @@
 
   // ---------- 交互 ----------
   function onCardClick(id) {
+    if (D.phase === 'tributeReturn') {                     // 还贡阶段：手牌里单选一张合规的牌
+      const c = D.hands[0].find(x => x.id === id);
+      if (!c) return;
+      if (GD.isJoker(c) || GD.naturalRank(c.rank) > 10 || c.id === D.pendingReturn.excludeId) return toast('只能还 ≤10 且非刚收到的牌');
+      sel = sel.has(id) ? new Set() : new Set([id]);       // 单选
+      render();
+      return;
+    }
     if (!(D.phase === 'playing' && D.active[0])) return;   // 允许随时选牌（便于组织/自定义理牌；出牌仍受轮次限制）
     if (sel.has(id)) sel.delete(id); else sel.add(id);
     hint.list = null;
@@ -1490,6 +1507,7 @@
   function selectedCards() { return D.hands[0].filter(c => sel.has(c.id)); }
 
   function onPlay() {
+    if (D.phase === 'tributeReturn') return confirmReturn();   // 还贡确认
     if (!(D.phase === 'playing' && D.turn === 0)) return;
     const cards = selectedCards();
     if (!cards.length) return toast('请先选牌');
@@ -1601,30 +1619,55 @@
   }
 
   // 交互式进贡 + 还贡：座0(玩家)需人工选则弹层；AI 自动。完成后回调(leader, 描述)
+  function moveCard(hands, from, to, card) { hands[from] = hands[from].filter(c => c.id !== card.id); hands[to].push(card); }
+  function tributeDesc(tributed) {
+    return tributed.map(t => roleName(t.giver) + '进贡' + GD.cardLabel(t.card) + '给' + roleName(t.to)
+      + (t.ret ? ('，' + roleName(t.to) + '还' + GD.cardLabel(t.ret)) : '')).join('；');
+  }
   function runTribute(plan, hands, level, done) {
-    const move = (from, to, card) => { hands[from] = hands[from].filter(c => c.id !== card.id); hands[to].push(card); };
     const tributed = [];   // {giver, to, card, ret?}
     function nextGive(i) {
-      if (i >= plan.gives.length) return startReturns(0);
+      if (i >= plan.gives.length) return doReturns();
       const g = plan.gives[i], cands = Game.tributeCandidates(hands[g.giver], level);
-      const apply = card => { move(g.giver, g.to, card); tributed.push({ giver: g.giver, to: g.to, card }); nextGive(i + 1); };
-      if (g.giver === 0 && cands.length > 1)
+      const apply = card => { moveCard(hands, g.giver, g.to, card); tributed.push({ giver: g.giver, to: g.to, card }); nextGive(i + 1); };
+      if (g.giver === 0 && cands.length > 1)   // 玩家进贡有并列最大牌→弹层选
         promptSelectCard('进贡：选一张最大牌交给「' + roleName(g.to) + '」', '最大牌并列，选你想交出的那张', cands, level, apply);
       else apply(cands[0]);
     }
-    function startReturns(i) {
-      if (i >= tributed.length) {
-        const desc = tributed.map(t => roleName(t.giver) + '进贡' + GD.cardLabel(t.card) + '给' + roleName(t.to)
-          + (t.ret ? ('，' + roleName(t.to) + '还' + GD.cardLabel(t.ret)) : '')).join('；');
-        return done(plan.leader, desc);
+    function doReturns() {
+      let humanRet = null;
+      for (const t of tributed) {
+        if (t.to === 0) humanRet = t;                    // 玩家还贡：稍后在手牌里选，不弹层
+        else { const card = Game.returnCard(hands[t.to], level, t.card.id); moveCard(hands, t.to, t.giver, card); t.ret = card; }
       }
-      const t = tributed[i], cands = Game.returnCandidates(hands[t.to], level, t.card.id);
-      const apply = card => { move(t.to, t.giver, card); t.ret = card; startReturns(i + 1); };
-      if (t.to === 0 && cands.length > 1)
-        promptSelectCard('还贡：选一张牌还给「' + roleName(t.giver) + '」', '遵守规矩：≤10、且不能还刚收到的牌', cands, level, apply);
-      else apply(t.to === 0 ? cands[0] : Game.returnCard(hands[t.to], level, t.card.id));
+      if (humanRet) enterReturnPhase(hands, level, plan.leader, tributed, humanRet);
+      else done(plan.leader, tributeDesc(tributed));
     }
     nextGive(0);
+  }
+
+  // 玩家还贡：建 D 渲染手牌，进入 tributeReturn 阶段，等玩家从手牌点选一张 ≤10 的牌
+  function enterReturnPhase(hands, level, leader, tributed, humanRet) {
+    D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
+      finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null],
+      phase: 'tributeReturn', pendingReturn: { to: humanRet.giver, excludeId: humanRet.card.id, leader, tributed, t: humanRet } };
+    sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
+    M.manualGroups = []; M.animSeat = null; M.sortMode = 'power';
+    $('btnGroup').classList.remove('on'); $('btnSort').classList.remove('on'); $('btnSort').textContent = '🎴 理牌';
+    M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
+    render();
+    toast(roleName(humanRet.giver) + '给你进贡' + GD.cardLabel(humanRet.card) + '：请从手牌点一张 ≤10 的牌还贡（不能还刚收到的），再点「确定还贡」', 4500);
+  }
+  function confirmReturn() {
+    const pr = D.pendingReturn, ids = [...sel];
+    if (!ids.length) return toast('请先选一张要还的牌');
+    const c = D.hands[0].find(x => x.id === ids[0]);
+    if (!c || GD.isJoker(c) || GD.naturalRank(c.rank) > 10 || c.id === pr.excludeId) return toast('只能还 ≤10 且非刚收到的牌');
+    moveCard(D.hands, 0, pr.to, c); pr.t.ret = c;
+    sel.clear();
+    const desc = tributeDesc(pr.tributed);
+    D.pendingReturn = null; D.phase = 'playing'; D.turn = pr.leader;
+    render(); toast(desc, 2800); pump();
   }
 
   // 选牌弹层：展示候选牌，点击即选
