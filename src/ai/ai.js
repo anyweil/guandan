@@ -151,13 +151,13 @@
   function removeSig(hand, cards) { const ids = new Set(cards.map(c => c.id)); return hand.filter(c => !ids.has(c.id)); }
   function opponentsOf(seat) { return [next(seat), next(next(seat))].filter(s => teamOf(s) !== teamOf(seat)); }
   function strongest(moves) { return moves.slice().sort((a, b) => b.combo.key - a.combo.key)[0]; }
-  // 把级牌(power15)/逢人配当"廉价配角"(三带二的二、顺子/连对填缺)的浪费代价；
-  //   本手主点本就是级牌(key=15) 或 炸/同花顺(逢人配本就该配) 时不罚。
+  // 浪费代价：逢人配(红桃主牌)是无价的(应留配炸/同花顺)——除炸/同花顺外，配成任何牌型都重罚(含配成级牌对)；
+  //   自然级牌仅当"非级牌主点的廉价配角"(三带二的二、顺子填缺)时才罚，单纯打级牌对/单(key=15)不罚。
   function wasteCost(m, level, key) {
-    if (isBomb(m.combo) || key === 15) return 0;
+    if (isBomb(m.combo)) return 0;                  // 炸/同花顺：逢人配本就该配
     let lv = 0, w = 0;
     for (const c of m.cards) { if (GD.isWild(c, level)) w++; else if (c.rank === level) lv++; }
-    return lv * 5 + w * 12;
+    return w * 12 + (key === 15 ? 0 : lv * 5);
   }
 
   // ---------- 记忆能力（按档位决定能“数清”哪些已出牌） ----------
