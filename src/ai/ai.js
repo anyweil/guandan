@@ -331,7 +331,8 @@
 
   function nextAct(active, s) { let t = (s + 1) % 4, g = 0; while (!active[t] && g++ < 4) t = (t + 1) % 4; return t; }
 
-  // rollout 快速策略：领出=最低一组(不主动拆炸)；跟牌=最小可压；仅对手将走完才炸。
+  // rollout 基准策略（与启发式同口径）：领出=最低一组(留高打低)；跟牌=最小可压、不盖队友；
+  //   出炸=按对手张数(≤3 或 5/6/7 才炸，4 与 ≥8 不炸)。
   function rolloutMove(hand, level, top, oppMin, mateOwns) {
     const byP = new Map();
     for (const c of hand) { const p = GD.powerOfCard(c, level); if (!byP.has(p)) byP.set(p, []); byP.get(p).push(c); }
@@ -345,10 +346,15 @@
     const nb = beats.filter(m => !isBomb(m.combo));
     if (nb.length) {
       nb.sort((a, b) => a.combo.key - b.combo.key);
-      if (mateOwns && oppMin > 3 && nb[0].combo.key > 10) return 'pass';  // 队友控场且不紧迫→不盖队友(只过小牌)
+      // 队友控场且不紧迫→不盖队友（仅允许过小牌：≤队友点数+3 且 ≤10）
+      if (mateOwns && oppMin > 3 && (nb[0].combo.key > top.key + 3 || nb[0].combo.key > 10)) return 'pass';
       return nb[0].cards;
     }
-    if (oppMin <= 2) { beats.sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key); return beats[0].cards; }
+    // 仅能炸：按对手张数口径
+    if (oppMin <= 3 || (oppMin >= 5 && oppMin <= 7)) {
+      beats.sort((a, b) => a.combo.bombScore - b.combo.bombScore || a.combo.key - b.combo.key);
+      return beats[0].cards;
+    }
     return 'pass';
   }
 
@@ -464,13 +470,25 @@
     return cands[bi];
   }
 
-  // ---------- PIMC 深度决策（可选·慢但更深） ----------
+  // ---------- PIMC 深度决策（可选·慢但更深；硬规则前置，其余交给搜索） ----------
   function pimcMove(state, seat, tier) {
-    const level = state.level, hand = state.hands[seat], top = state.current;
+    const level = state.level, hand = state.hands[seat], top = state.current, owner = state.currentOwner;
     let cands;
     if (top) {
       const beats = movesBeating(hand, level, top);
       const out = beats.find(m => m.cards.length === hand.length); if (out) return out.cards;  // 一把走完
+      // 不盖队友（与启发式同口径，硬规则前置）
+      if (owner != null && teammate(seat) === owner) {
+        const mem = buildMemory(state, seat, tier, level);
+        if (state.hands[owner].length <= 6) return 'pass';
+        const nb = beats.filter(m => !isBomb(m.combo)).sort((a, b) => a.combo.key - b.combo.key);
+        if (mem.oppMin > 3) {   // 不紧迫
+          if (isBomb(top) || isControl(top, mem)) return 'pass';
+          if (nb.length && nb[0].combo.key <= 10 && nb[0].combo.key <= top.key + 3) return nb[0].cards;
+          return 'pass';
+        }
+        if (isControl(top, mem)) return 'pass';   // 紧迫但队友已压死对手
+      }
       cands = pruneFollow(beats); cands.push('pass');
     } else {
       const moves = allCombos(hand, level);
