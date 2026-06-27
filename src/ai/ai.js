@@ -127,7 +127,7 @@
     return m.filter(x => GD.beats(x.combo, top, level));
   }
 
-  // ---------- 手数估计：越少越接近走完（核心目标） ----------
+  // ---------- 手数估计：越少越接近走完（核心目标）。最小改动：原逻辑 + 下限，杜绝把大手牌估成 1~2 手 ----------
   function estPlays(cards, level) {
     let wild = 0; const counts = {}, nat = {};
     for (const c of cards) {
@@ -145,11 +145,11 @@
     const pv = []; for (const v in nat) if (nat[v] >= 2) pv.push(+v); pv.sort((a, b) => a - b);
     run = 0; prev = -9;
     for (const v of pv) { run = (v === prev + 1) ? run + 1 : 1; prev = v; if (run >= 3) { plays -= 2; run = 0; prev = -9; } }
-    return Math.max(1, plays - wild * 0.2);
+    return Math.max(Math.ceil(cards.length / 6), 1, plays - wild * 0.2);   // ★下限 ⌈张数/6⌉：21张≥4手，杜绝离谱低估触发抢风炸
   }
   const handScore = estPlays;   // 兼容旧 API 名
   function removeSig(hand, cards) { const ids = new Set(cards.map(c => c.id)); return hand.filter(c => !ids.has(c.id)); }
-  function opponentsOf(seat) { return [next(seat), next(next(seat))].filter(s => teamOf(s) !== teamOf(seat)); }
+  function opponentsOf(seat) { return [(seat + 1) % 4, (seat + 3) % 4]; }   // 两个相邻座位即两个对手
   function strongest(moves) { return moves.slice().sort((a, b) => b.combo.key - a.combo.key)[0]; }
   // 浪费代价：逢人配(红桃主牌)是无价的(应留配炸/同花顺)——除炸/同花顺外，配成任何牌型都重罚(含配成级牌对)；
   //   自然级牌仅当"非级牌主点的廉价配角"(三带二的二、顺子填缺)时才罚，单纯打级牌对/单(key=15)不罚。
@@ -315,22 +315,19 @@
   function shouldBomb(state, seat, hand, level, mem, owner) {
     const oppMin = mem.oppMin, myPlays = estPlays(hand, level);
     if (oppMin <= 2) return true;                             // 对手可能1手走完→必炸
-    if (myPlays <= 2) return true;                            // 我也即将走完→抢风必炸
+    if (myPlays <= 2 && hand.length <= 12) return true;       // 我自己即将走完→抢风(加 handLen 保险，杜绝大手牌误判)
     const ownerIsOpp = owner != null && teamOf(owner) !== teamOf(seat);
     // 强弱取舍：放掉不紧迫的强对手，省炸专防真威胁（宗师用 dumped 修正威胁度）
     if (ownerIsOpp && mem.opps.length === 2) {
       const other = mem.opps[0] === owner ? mem.opps[1] : mem.opps[0];
       if (oppDanger(state, mem, other) > oppDanger(state, mem, owner) + 4 && state.hands[owner].length >= 6) return false;
     }
-    if (oppMin <= 3) return true;                             // 对手剩≤3张很危急→炸拦截
-    // 对手剩 4~7 张：只有"炸了对自己划算"才炸——是对手控场、且我也接近走完(炸完能顺势抢风走牌)。
-    //   早期 / 我手数还多时，绝不为压一手小牌白费炸弹（代价太大，留着拦截真威胁）。
-    if (oppMin <= 7) return ownerIsOpp && myPlays <= 4;
-    // 8/9张：更要我很接近走完，且记忆预测对手可能"成炸+一手"即将走完
-    if (oppMin <= 9) return ownerIsOpp && myPlays <= 3 && highMaterial(mem) * mem.oppShare >= 5;
+    if (oppMin <= 7) return true;                             // 对手剩 5/6/7 张 → 一般要炸(夺权、防其走小、防其走完)
+    // 8/9张：仅当我接近走完、且记忆预测对手可能"成炸+一手"即将走完
+    if (oppMin <= 9) return myPlays <= 4 && highMaterial(mem) * mem.oppShare >= 5;
     return false;
   }
-  const FOLLOW_KEY = 7, FOLLOW_OPP = 4;   // 跟牌纪律阈值（复式扫参确定）
+  const FOLLOW_KEY = 5, FOLLOW_OPP = 3;   // 跟牌纪律阈值（修正 opponentsOf 后复式重扫确定）
 
   // ===================== 深度搜索：PIMC（完美信息蒙特卡洛） =====================
   // 记忆 = 信念：已“记住”的出牌从牌池剔除；对每个候选出牌，采样多种可能的对手手牌、
