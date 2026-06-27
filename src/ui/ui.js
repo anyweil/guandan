@@ -7,7 +7,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v16';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v17';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -37,7 +37,8 @@
   // ︎ = 文本变体选择符：强制矢量文字字形（清晰、可上色），避免被渲染成笨重 emoji
   const VS = '︎';
   const SM = { S: '♠' + VS, H: '♥' + VS, C: '♣' + VS, D: '♦' + VS };
-  function cardEl(c, cls) {
+  function cardEl(c, cls, lvl) {
+    lvl = lvl != null ? lvl : (D && D.level);
     const el = document.createElement('div');
     el.className = 'card ' + (cls || '');
     if (GD.isJoker(c)) {
@@ -47,7 +48,7 @@
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');
-      if (GD.isWild(c, D.level)) el.classList.add('wild'); else if (c.rank === D.level) el.classList.add('lv');
+      if (GD.isWild(c, lvl)) el.classList.add('wild'); else if (c.rank === lvl) el.classList.add('lv');
       const s = SM[c.suit];
       el.innerHTML = '<span class="corner tl"><b>' + c.rank + '</b><i>' + s + '</i></span><span class="pip">' + s + '</span><span class="corner br"><b>' + c.rank + '</b><i>' + s + '</i></span>';
     }
@@ -268,12 +269,13 @@
     const lvIdx = M.prevRanks ? M.levels[dealTeam] : M.startLevelIdx;
     const level = LEVELS[lvIdx];
     const hands = GD.deal();
-    let leader = 0, tributeMsg = '';
-    if (M.prevRanks) {
-      const tr = Game.resolveTribute(M.prevRanks, hands, level);
-      leader = tr.leader;
-      tributeMsg = describeTribute(tr);
-    }
+    if (!M.prevRanks) return beginDeal(hands, level, (Math.random() * 4) | 0, '本局先手随机');   // 首局先手随机
+    const plan = Game.tributePlan(M.prevRanks, hands, level);
+    if (plan.antiTribute) return beginDeal(hands, level, plan.leader, '末游手握双大王 · 抗贡！由头游先出');
+    runTribute(plan, hands, level, (leader, desc) => beginDeal(hands, level, leader, desc));   // 之后按规矩进贡(可能弹人工选择)
+  }
+
+  function beginDeal(hands, level, leader, msg) {
     D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
       finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null], phase: 'playing' };
     sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
@@ -282,13 +284,48 @@
     $('btnGroup').classList.remove('on');
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();
-    if (tributeMsg) toast(tributeMsg, 2600);
+    if (msg) toast(msg, 3000);
     pump();
   }
 
-  function describeTribute(tr) {
-    if (tr.antiTribute) return '末游手握双大王 · 抗贡！由头游先出';
-    return tr.moves.map(m => roleName(m.tribute.giver) + '→' + roleName(m.to) + ' 进贡' + GD.cardLabel(m.tribute.card) + '，还贡' + GD.cardLabel(m.ret)).join('；');
+  // 交互式进贡 + 还贡：座0(玩家)需人工选则弹层；AI 自动。完成后回调(leader, 描述)
+  function runTribute(plan, hands, level, done) {
+    const move = (from, to, card) => { hands[from] = hands[from].filter(c => c.id !== card.id); hands[to].push(card); };
+    const tributed = [];   // {giver, to, card, ret?}
+    function nextGive(i) {
+      if (i >= plan.gives.length) return startReturns(0);
+      const g = plan.gives[i], cands = Game.tributeCandidates(hands[g.giver], level);
+      const apply = card => { move(g.giver, g.to, card); tributed.push({ giver: g.giver, to: g.to, card }); nextGive(i + 1); };
+      if (g.giver === 0 && cands.length > 1)
+        promptSelectCard('进贡：选一张最大牌交给「' + roleName(g.to) + '」', '最大牌并列，选你想交出的那张', cands, level, apply);
+      else apply(cands[0]);
+    }
+    function startReturns(i) {
+      if (i >= tributed.length) {
+        const desc = tributed.map(t => roleName(t.giver) + '进贡' + GD.cardLabel(t.card) + '给' + roleName(t.to)
+          + (t.ret ? ('，' + roleName(t.to) + '还' + GD.cardLabel(t.ret)) : '')).join('；');
+        return done(plan.leader, desc);
+      }
+      const t = tributed[i], cands = Game.returnCandidates(hands[t.to], level, t.card.id);
+      const apply = card => { move(t.to, t.giver, card); t.ret = card; startReturns(i + 1); };
+      if (t.to === 0 && cands.length > 1)
+        promptSelectCard('还贡：选一张牌还给「' + roleName(t.giver) + '」', '遵守规矩：≤10、且不能还刚收到的牌', cands, level, apply);
+      else apply(t.to === 0 ? cands[0] : Game.returnCard(hands[t.to], level, t.card.id));
+    }
+    nextGive(0);
+  }
+
+  // 选牌弹层：展示候选牌，点击即选
+  function promptSelectCard(title, hintText, cards, level, cb) {
+    $('tribttl').textContent = title;
+    $('tribhint').textContent = hintText || '';
+    const box = $('tribcards'); box.innerHTML = '';
+    for (const c of GD.sortHand(cards, level)) {
+      const el = cardEl(c, '', level); el.style.cursor = 'pointer';
+      el.addEventListener('click', () => { $('tribmask').classList.remove('show'); cb(c); });
+      box.appendChild(el);
+    }
+    $('tribmask').classList.add('show');
   }
 
   function dealEnd() {

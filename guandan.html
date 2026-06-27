@@ -182,6 +182,15 @@
   </div>
 </div>
 
+<!-- 进贡/还贡选牌 -->
+<div class="mask" id="tribmask">
+  <div class="panel">
+    <h2 id="tribttl">选择</h2>
+    <div class="hand" id="tribcards" style="font-size:clamp(44px,13vw,72px);min-height:auto;gap:.2em"></div>
+    <div style="font-size:12px;color:#a9c6ba;margin-top:8px" id="tribhint"></div>
+  </div>
+</div>
+
 <!-- 结算 -->
 <div class="mask" id="resmask">
   <div class="panel">
@@ -638,9 +647,9 @@
     }
     return best;
   }
-  function returnCard(hand, level) {             // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小
-    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10);
-    if (!small.length) return hand.find(c => !GD.isJoker(c)) || hand[0]; // 兜底
+  function returnCard(hand, level, excludeId) {  // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小；排除刚进的牌
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10 && c.id !== excludeId);
+    if (!small.length) return hand.find(c => !GD.isJoker(c) && c.id !== excludeId) || hand[0]; // 兜底
     const cnt = {};
     for (const c of hand) if (!GD.isJoker(c)) cnt[c.rank] = (cnt[c.rank] || 0) + 1;
     small.sort((a, b) => {
@@ -651,6 +660,33 @@
     return small[0];
   }
   function move1(fromHand, toHand, card) { removeCards(fromHand, [card]); toHand.push(card); }
+
+  // ---------- 进贡计划（只计算谁贡给谁，不移动牌；供 UI 交互式进贡/还贡） ----------
+  function tributePlan(prevRanks, hands, level) {
+    const head = prevRanks[0], second = prevRanks[1], third = prevRanks[2], last = prevRanks[3];
+    const doubleDown = prevRanks.indexOf(teammate(head)) === 1;
+    if (doubleDown) {
+      if (countBigJoker(hands[third]) + countBigJoker(hands[last]) >= 2) return { antiTribute: true, leader: head, gives: [] };
+      const a = biggestCard(hands[last], level), b = biggestCard(hands[third], level);
+      const lastBig = GD.powerOfCard(a, level) >= GD.powerOfCard(b, level);     // 较大者给头游，较小者给二游
+      const gives = lastBig ? [{ giver: last, to: head }, { giver: third, to: second }]
+                            : [{ giver: third, to: head }, { giver: last, to: second }];
+      return { antiTribute: false, leader: last, gives };
+    }
+    if (countBigJoker(hands[last]) >= 2) return { antiTribute: true, leader: head, gives: [] };
+    return { antiTribute: false, leader: last, gives: [{ giver: last, to: head }] };
+  }
+  // 进贡候选：手中"最大牌"（并列时多张，供人工选）；逢人配不进贡
+  function tributeCandidates(hand, level) {
+    const elig = hand.filter(c => !GD.isWild(c, level));
+    let maxP = -1; for (const c of elig) maxP = Math.max(maxP, GD.powerOfCard(c, level));
+    return elig.filter(c => GD.powerOfCard(c, level) === maxP);
+  }
+  // 还贡候选：≤10 的牌（不含王/逢人配），排除刚进的那张
+  function returnCandidates(hand, level, excludeId) {
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10 && c.id !== excludeId);
+    return small.length ? small : hand.filter(c => !GD.isJoker(c) && c.id !== excludeId);
+  }
 
   // 返回 {antiTribute, leader, moves:[...描述]}；直接在 hands 上完成进贡/还贡
   function resolveTribute(prevRanks, hands, level) {
@@ -727,7 +763,8 @@
   const API = {
     next, teammate, teamOf, LEVEL_SEQ,
     genCandidates, legalMoves, runDeal, scoreDeal, advanceLevel,
-    resolveTribute, playMatch, greedyDecider, biggestCard, countBigJoker
+    resolveTribute, playMatch, greedyDecider, biggestCard, countBigJoker,
+    tributePlan, tributeCandidates, returnCandidates, returnCard
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.GDGame = Object.assign(root.GDGame || {}, API);
@@ -1282,7 +1319,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v16';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v17';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1312,7 +1349,8 @@
   // ︎ = 文本变体选择符：强制矢量文字字形（清晰、可上色），避免被渲染成笨重 emoji
   const VS = '︎';
   const SM = { S: '♠' + VS, H: '♥' + VS, C: '♣' + VS, D: '♦' + VS };
-  function cardEl(c, cls) {
+  function cardEl(c, cls, lvl) {
+    lvl = lvl != null ? lvl : (D && D.level);
     const el = document.createElement('div');
     el.className = 'card ' + (cls || '');
     if (GD.isJoker(c)) {
@@ -1322,7 +1360,7 @@
     }
     else {
       if (c.suit === 'H' || c.suit === 'D') el.classList.add('red');
-      if (GD.isWild(c, D.level)) el.classList.add('wild'); else if (c.rank === D.level) el.classList.add('lv');
+      if (GD.isWild(c, lvl)) el.classList.add('wild'); else if (c.rank === lvl) el.classList.add('lv');
       const s = SM[c.suit];
       el.innerHTML = '<span class="corner tl"><b>' + c.rank + '</b><i>' + s + '</i></span><span class="pip">' + s + '</span><span class="corner br"><b>' + c.rank + '</b><i>' + s + '</i></span>';
     }
@@ -1543,12 +1581,13 @@
     const lvIdx = M.prevRanks ? M.levels[dealTeam] : M.startLevelIdx;
     const level = LEVELS[lvIdx];
     const hands = GD.deal();
-    let leader = 0, tributeMsg = '';
-    if (M.prevRanks) {
-      const tr = Game.resolveTribute(M.prevRanks, hands, level);
-      leader = tr.leader;
-      tributeMsg = describeTribute(tr);
-    }
+    if (!M.prevRanks) return beginDeal(hands, level, (Math.random() * 4) | 0, '本局先手随机');   // 首局先手随机
+    const plan = Game.tributePlan(M.prevRanks, hands, level);
+    if (plan.antiTribute) return beginDeal(hands, level, plan.leader, '末游手握双大王 · 抗贡！由头游先出');
+    runTribute(plan, hands, level, (leader, desc) => beginDeal(hands, level, leader, desc));   // 之后按规矩进贡(可能弹人工选择)
+  }
+
+  function beginDeal(hands, level, leader, msg) {
     D = { level, hands, turn: leader, current: null, currentOwner: null, passes: 0,
       finished: [], active: [true, true, true, true], played: [], playLog: [], lastPlayed: [null, null, null, null], phase: 'playing' };
     sel.clear(); hint.list = null; groupCache = { sig: '', layout: null };
@@ -1557,13 +1596,48 @@
     $('btnGroup').classList.remove('on');
     M.dealNo++; $('hudno').textContent = '第 ' + M.dealNo + ' 局';
     render();
-    if (tributeMsg) toast(tributeMsg, 2600);
+    if (msg) toast(msg, 3000);
     pump();
   }
 
-  function describeTribute(tr) {
-    if (tr.antiTribute) return '末游手握双大王 · 抗贡！由头游先出';
-    return tr.moves.map(m => roleName(m.tribute.giver) + '→' + roleName(m.to) + ' 进贡' + GD.cardLabel(m.tribute.card) + '，还贡' + GD.cardLabel(m.ret)).join('；');
+  // 交互式进贡 + 还贡：座0(玩家)需人工选则弹层；AI 自动。完成后回调(leader, 描述)
+  function runTribute(plan, hands, level, done) {
+    const move = (from, to, card) => { hands[from] = hands[from].filter(c => c.id !== card.id); hands[to].push(card); };
+    const tributed = [];   // {giver, to, card, ret?}
+    function nextGive(i) {
+      if (i >= plan.gives.length) return startReturns(0);
+      const g = plan.gives[i], cands = Game.tributeCandidates(hands[g.giver], level);
+      const apply = card => { move(g.giver, g.to, card); tributed.push({ giver: g.giver, to: g.to, card }); nextGive(i + 1); };
+      if (g.giver === 0 && cands.length > 1)
+        promptSelectCard('进贡：选一张最大牌交给「' + roleName(g.to) + '」', '最大牌并列，选你想交出的那张', cands, level, apply);
+      else apply(cands[0]);
+    }
+    function startReturns(i) {
+      if (i >= tributed.length) {
+        const desc = tributed.map(t => roleName(t.giver) + '进贡' + GD.cardLabel(t.card) + '给' + roleName(t.to)
+          + (t.ret ? ('，' + roleName(t.to) + '还' + GD.cardLabel(t.ret)) : '')).join('；');
+        return done(plan.leader, desc);
+      }
+      const t = tributed[i], cands = Game.returnCandidates(hands[t.to], level, t.card.id);
+      const apply = card => { move(t.to, t.giver, card); t.ret = card; startReturns(i + 1); };
+      if (t.to === 0 && cands.length > 1)
+        promptSelectCard('还贡：选一张牌还给「' + roleName(t.giver) + '」', '遵守规矩：≤10、且不能还刚收到的牌', cands, level, apply);
+      else apply(t.to === 0 ? cands[0] : Game.returnCard(hands[t.to], level, t.card.id));
+    }
+    nextGive(0);
+  }
+
+  // 选牌弹层：展示候选牌，点击即选
+  function promptSelectCard(title, hintText, cards, level, cb) {
+    $('tribttl').textContent = title;
+    $('tribhint').textContent = hintText || '';
+    const box = $('tribcards'); box.innerHTML = '';
+    for (const c of GD.sortHand(cards, level)) {
+      const el = cardEl(c, '', level); el.style.cursor = 'pointer';
+      el.addEventListener('click', () => { $('tribmask').classList.remove('show'); cb(c); });
+      box.appendChild(el);
+    }
+    $('tribmask').classList.add('show');
   }
 
   function dealEnd() {

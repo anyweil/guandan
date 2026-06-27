@@ -142,9 +142,9 @@
     }
     return best;
   }
-  function returnCard(hand, level) {             // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小
-    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10);
-    if (!small.length) return hand.find(c => !GD.isJoker(c)) || hand[0]; // 兜底
+  function returnCard(hand, level, excludeId) {  // 还贡：一张 ≤10 的小牌——优先孤张(不拆自己对子/结构)，再取最小；排除刚进的牌
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10 && c.id !== excludeId);
+    if (!small.length) return hand.find(c => !GD.isJoker(c) && c.id !== excludeId) || hand[0]; // 兜底
     const cnt = {};
     for (const c of hand) if (!GD.isJoker(c)) cnt[c.rank] = (cnt[c.rank] || 0) + 1;
     small.sort((a, b) => {
@@ -155,6 +155,33 @@
     return small[0];
   }
   function move1(fromHand, toHand, card) { removeCards(fromHand, [card]); toHand.push(card); }
+
+  // ---------- 进贡计划（只计算谁贡给谁，不移动牌；供 UI 交互式进贡/还贡） ----------
+  function tributePlan(prevRanks, hands, level) {
+    const head = prevRanks[0], second = prevRanks[1], third = prevRanks[2], last = prevRanks[3];
+    const doubleDown = prevRanks.indexOf(teammate(head)) === 1;
+    if (doubleDown) {
+      if (countBigJoker(hands[third]) + countBigJoker(hands[last]) >= 2) return { antiTribute: true, leader: head, gives: [] };
+      const a = biggestCard(hands[last], level), b = biggestCard(hands[third], level);
+      const lastBig = GD.powerOfCard(a, level) >= GD.powerOfCard(b, level);     // 较大者给头游，较小者给二游
+      const gives = lastBig ? [{ giver: last, to: head }, { giver: third, to: second }]
+                            : [{ giver: third, to: head }, { giver: last, to: second }];
+      return { antiTribute: false, leader: last, gives };
+    }
+    if (countBigJoker(hands[last]) >= 2) return { antiTribute: true, leader: head, gives: [] };
+    return { antiTribute: false, leader: last, gives: [{ giver: last, to: head }] };
+  }
+  // 进贡候选：手中"最大牌"（并列时多张，供人工选）；逢人配不进贡
+  function tributeCandidates(hand, level) {
+    const elig = hand.filter(c => !GD.isWild(c, level));
+    let maxP = -1; for (const c of elig) maxP = Math.max(maxP, GD.powerOfCard(c, level));
+    return elig.filter(c => GD.powerOfCard(c, level) === maxP);
+  }
+  // 还贡候选：≤10 的牌（不含王/逢人配），排除刚进的那张
+  function returnCandidates(hand, level, excludeId) {
+    const small = hand.filter(c => !GD.isJoker(c) && GD.naturalRank(c.rank) <= 10 && c.id !== excludeId);
+    return small.length ? small : hand.filter(c => !GD.isJoker(c) && c.id !== excludeId);
+  }
 
   // 返回 {antiTribute, leader, moves:[...描述]}；直接在 hands 上完成进贡/还贡
   function resolveTribute(prevRanks, hands, level) {
@@ -231,7 +258,8 @@
   const API = {
     next, teammate, teamOf, LEVEL_SEQ,
     genCandidates, legalMoves, runDeal, scoreDeal, advanceLevel,
-    resolveTribute, playMatch, greedyDecider, biggestCard, countBigJoker
+    resolveTribute, playMatch, greedyDecider, biggestCard, countBigJoker,
+    tributePlan, tributeCandidates, returnCandidates, returnCard
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.GDGame = Object.assign(root.GDGame || {}, API);
