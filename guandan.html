@@ -1352,7 +1352,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v25';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v26';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1485,15 +1485,19 @@
     if (M.sortMode === 'grouped' && D && D.active[0]) toast('已整理：' + getGroupedLayout().hands + ' 手可走完');
   }
 
-  // ---------- 自定义理牌：选中的牌抽出来竖向成一组 ----------
+  // ---------- 自定义理牌：手工组(合法牌型)放最右；其余牌按理牌逻辑自动分组放左边 ----------
   function manualCols() {
-    const inGroup = new Set(), cols = [];
+    const inGroup = new Set(), manualGroupCols = [];
     for (const g of M.manualGroups) {
       const cards = g.map(id => D.hands[0].find(c => c.id === id)).filter(Boolean);
-      if (cards.length) { cards.forEach(c => inGroup.add(c.id)); cols.push(GD.sortHand(cards, D.level)); }
+      if (cards.length) { cards.forEach(c => inGroup.add(c.id)); manualGroupCols.push(GD.sortHand(cards, D.level)); }
     }
-    for (const c of myHandSorted()) if (!inGroup.has(c.id)) cols.push([c]);   // 未成组的散牌各占一列
-    return cols;
+    const remaining = D.hands[0].filter(c => !inGroup.has(c.id));   // 剩余牌按理牌逻辑自动分组
+    const dec = AI.decomposeHand(remaining, D.level);
+    const autoCols = [];
+    for (const grp of dec.groups) autoCols.push(GD.sortHand(grp.cards, D.level));
+    for (const c of GD.sortHand(dec.singles, D.level)) autoCols.push([c]);
+    return autoCols.concat(manualGroupCols);                        // 自动组在左、手工组在右
   }
   function onGroup() {
     if (!D || D.phase !== 'playing' || !D.active[0]) return;
@@ -1503,7 +1507,10 @@
       else toast('先选要成组的牌，再点「成组」');
       return;
     }
-    // 把这些牌从已有组里摘出，再新建一组
+    // 成组的牌必须是合法牌型（单/对/三/三带二/顺子/连对/钢板/炸/同花顺/天王炸）
+    const cards = D.hands[0].filter(c => sel.has(c.id));
+    if (!GD.classify(cards, D.level)) return toast('选中的牌不是合法牌型，不能成组');
+    // 把这些牌从已有组里摘出，再新建一组（放最右）
     M.manualGroups = M.manualGroups.map(g => g.filter(id => !ids.includes(id))).filter(g => g.length);
     M.manualGroups.push(ids);
     sel.clear();
@@ -1511,7 +1518,7 @@
     $('btnSort').classList.remove('on'); $('btnSort').textContent = '🎴 理牌';
     $('btnGroup').classList.add('on');
     render();
-    toast('已抽出 ' + ids.length + ' 张成一组（可继续选牌成组；空选点「成组」复位）');
+    toast('已成一组「' + cards.map(GD.cardLabel).join('') + '」放最右；其余自动理牌');
   }
   function onAuto() {
     if (!D || D.phase !== 'playing') return;
