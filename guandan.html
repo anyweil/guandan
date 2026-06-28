@@ -934,6 +934,23 @@
     for (const c of m.cards) { if (GD.isWild(c, level)) w++; else if (c.rank === level) lv++; }
     return w * 12 + (key === 15 ? 0 : lv * 5);
   }
+  // 拆牌代价：这手把手里某点数的牌只用了一部分(拆散原结构)→罚。尤其别拆炸弹(留作后期杀招)、别拆对打单。
+  function breakCost(m, hand, level) {
+    if (isBomb(m.combo)) return 0;                  // 这手本身就是炸/同花顺，不算拆
+    const handCnt = {}, useCnt = {};
+    for (const c of hand) if (!GD.isJoker(c) && !GD.isWild(c, level)) handCnt[c.rank] = (handCnt[c.rank] || 0) + 1;
+    for (const c of m.cards) if (!GD.isJoker(c) && !GD.isWild(c, level)) useCnt[c.rank] = (useCnt[c.rank] || 0) + 1;
+    let cost = 0;
+    for (const r in useCnt) {
+      const have = handCnt[r], use = useCnt[r];
+      if (use < have) {                             // 没全用完→拆散了
+        if (have >= 4) cost += 25;                  // 拆炸弹！重罚——留着炸弹做后期杀招/夺权
+        else if (have === 3) cost += 5;             // 拆三条
+        else if (have === 2 && use === 1) cost += 4; // 拆对打单（除非单牌能控/外面没单，一般别拆）
+      }
+    }
+    return cost;
+  }
 
   // ---------- 记忆能力（按档位决定能“数清”哪些已出牌） ----------
   // 0入门:无 | 1中级:王+级牌 | 2高级:+所有≥10 | 3大师:全部 | 4宗师:全部+谁出
@@ -1019,7 +1036,9 @@
       if (t === T.TUBE || t === T.PLATE) sc += 3;                  // 木板/钢板早出对手难跟
       else if (t === T.STRAIGHT) sc += (k <= 8 ? 1.5 : -2.5);      // 小顺/无用顺早出腾手；大顺留后(对手接不动)
       else if (t === T.SINGLE && k <= 8) sc += 1;                  // 弱小单早出腾手("要上游，先弱单")
+      else if (t === T.PAIR && k <= 6) sc += 1;                    // 小对(≤6)也早处理，别留成死牌
       sc -= wasteCost(m, level, k);                               // 别把级牌/逢人配当廉价配角(三带二的"二"、顺子填缺等)
+      sc -= breakCost(m, hand, level);                            // 别拆炸弹/拆三条/拆对打单
       // 卡住即将走完的对手：有对手仅剩1张时——绝不领单张(它正好出最后一张走完)；
       //   领对子/三/连对/结构它1张接不动→被卡住，强烈优先。
       if (oppOne) {
@@ -1074,6 +1093,7 @@
       if (isControl(m.combo, mem)) sc += 3;                      // 这手压下去对手反压不动→赢墩夺权(记忆好才认得出)
       if (hasLock(rem, level, mem)) sc += 2;                     // 出完仍有回手
       sc -= wasteCost(m, level, m.combo.key);                   // 别把级牌/逢人配当廉价配角
+      sc -= breakCost(m, hand, level);                          // 别拆炸弹/拆三条/拆对打单
       if (sc > bestSc) { bestSc = sc; best = m; }
     }
     // 跟牌纪律（记忆驱动）：这手最小可压若压不死对手(非绝张、会被反压)、又是较大的单/对、且我方不紧迫，
@@ -1332,7 +1352,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v24';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v25';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
