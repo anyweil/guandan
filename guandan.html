@@ -77,6 +77,12 @@
   .card .jlb{position:absolute;left:0;right:0;bottom:.11em;text-align:center;font-size:.2em;font-weight:800;letter-spacing:.12em}
   /* 出牌区小牌（对手出牌展示） */
   .card.mini{--cw:clamp(24px,min(5.8vw,4.6vh),48px)}
+  /* 透视手牌（玩家走完后旁观 / 双下结算亮牌） */
+  .card.tiny{--cw:16px}
+  .seat .reveal{display:flex;flex-wrap:wrap;gap:1px;justify-content:center;max-width:132px;margin-top:3px}
+  .res-reveal{margin-top:4px}
+  .res-reveal .rv-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:6px}
+  .res-reveal .rv-nm{font-size:12px;color:#a9c6ba;min-width:74px;text-align:left}
   /* 手牌区 */
   .bottom{flex:none;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(0,0,0,.22)}
   /* 手牌区：font-size 即牌宽基准，clamp 随屏宽/屏高动态缩放，适配手机/折叠屏/平板 */
@@ -141,9 +147,9 @@
 
 <div class="table" id="tablearea">
   <!-- 座位 -->
-  <div class="seat seat-N" id="seatN"><div class="nm">对家(队友)</div><div class="sub" id="diffN">高级</div><div class="ct" id="ctN">27</div><div class="rank" id="rkN"></div></div>
-  <div class="seat seat-E" id="seatE"><div class="nm">下家(对手)</div><div class="sub" id="diffE">中级</div><div class="ct" id="ctE">27</div><div class="rank" id="rkE"></div></div>
-  <div class="seat seat-W" id="seatW"><div class="nm">上家(对手)</div><div class="sub" id="diffW">中级</div><div class="ct" id="ctW">27</div><div class="rank" id="rkW"></div></div>
+  <div class="seat seat-N" id="seatN"><div class="nm">对家(队友)</div><div class="sub" id="diffN">高级</div><div class="ct" id="ctN">27</div><div class="rank" id="rkN"></div><div class="reveal" id="rvN"></div></div>
+  <div class="seat seat-E" id="seatE"><div class="nm">下家(对手)</div><div class="sub" id="diffE">中级</div><div class="ct" id="ctE">27</div><div class="rank" id="rkE"></div><div class="reveal" id="rvE"></div></div>
+  <div class="seat seat-W" id="seatW"><div class="nm">上家(对手)</div><div class="sub" id="diffW">中级</div><div class="ct" id="ctW">27</div><div class="rank" id="rkW"></div><div class="reveal" id="rvW"></div></div>
   <div class="seat seat-S" id="seatS"><div class="nm">我</div><div class="sub">玩家</div><div class="ct" id="ctS">27</div><div class="rank" id="rkS"></div></div>
   <!-- 出牌区 -->
   <div class="play play-N" id="playN"></div>
@@ -196,6 +202,7 @@
   <div class="panel">
     <h2 id="resttl">本局结算</h2>
     <div class="res-list" id="reslist"></div>
+    <div class="res-reveal" id="resreveal"></div>
     <button class="pbtn" id="btnNext">下一局</button>
   </div>
 </div>
@@ -1355,7 +1362,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v27';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v28';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1417,6 +1424,12 @@
       seat.classList.toggle('out', !D.active[s]);
     }
     $('diffN').textContent = M.diff[2]; $('diffE').textContent = M.diff[1]; $('diffW').textContent = M.diff[3];
+    // 旁观透视：玩家走完后，UI 给玩家亮出其余三家手牌（仅展示，AI 之间互不可见、决策逻辑不变）
+    const peek = D.phase === 'playing' && !D.active[0];
+    for (const s of [1, 2, 3]) {
+      const rv = $('rv' + SEAT_ID[s]); rv.innerHTML = '';
+      if (peek) for (const c of GD.sortHand(D.hands[s], D.level)) rv.appendChild(cardEl(c, 'tiny'));
+    }
     // 出牌区（仅刚出牌的那家播放滑入动画）
     for (const s of [0, 1, 2, 3]) {
       const box = $('play' + SEAT_ID[s]); box.innerHTML = '';
@@ -1749,6 +1762,18 @@
     const teamCN = sc.headTeam === teamOf(0) ? '我方' : '对方';
     lines.push('<div style="margin-top:8px">' + teamCN + '头游 ' + (sc.doubleDown ? '双下 ' : '') + '+' + sc.gain + ' 级　→　我方 ' + LEVELS[M.levels.A] + ' · 对方 ' + LEVELS[M.levels.B] + '</div>');
     $('reslist').innerHTML = lines.join('');
+    // 双下提前结束：把未走完两家的手牌全部亮出来
+    const rev = $('resreveal'); rev.innerHTML = '';
+    if (sc.doubleDown) {
+      for (const s of [0, 1, 2, 3].filter(x => D.hands[x].length)) {
+        const row = document.createElement('div'); row.className = 'rv-row';
+        const nm = document.createElement('span'); nm.className = 'rv-nm';
+        nm.textContent = roleName(s) + (s === 0 ? '（你）' : '') + '：';
+        row.appendChild(nm);
+        for (const c of GD.sortHand(D.hands[s], D.level)) row.appendChild(cardEl(c, 'tiny'));
+        rev.appendChild(row);
+      }
+    }
     if (M.matchWon) {
       $('resttl').textContent = (M.matchWon === teamOf(0)) ? '🎉 我方胜利（过 A）！' : '😖 对方胜利（过 A）';
       $('btnNext').textContent = '再来一整场';

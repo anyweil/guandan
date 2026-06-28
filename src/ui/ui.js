@@ -7,7 +7,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v27';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v28';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -69,6 +69,12 @@
       seat.classList.toggle('out', !D.active[s]);
     }
     $('diffN').textContent = M.diff[2]; $('diffE').textContent = M.diff[1]; $('diffW').textContent = M.diff[3];
+    // 旁观透视：玩家走完后，UI 给玩家亮出其余三家手牌（仅展示，AI 之间互不可见、决策逻辑不变）
+    const peek = D.phase === 'playing' && !D.active[0];
+    for (const s of [1, 2, 3]) {
+      const rv = $('rv' + SEAT_ID[s]); rv.innerHTML = '';
+      if (peek) for (const c of GD.sortHand(D.hands[s], D.level)) rv.appendChild(cardEl(c, 'tiny'));
+    }
     // 出牌区（仅刚出牌的那家播放滑入动画）
     for (const s of [0, 1, 2, 3]) {
       const box = $('play' + SEAT_ID[s]); box.innerHTML = '';
@@ -401,6 +407,18 @@
     const teamCN = sc.headTeam === teamOf(0) ? '我方' : '对方';
     lines.push('<div style="margin-top:8px">' + teamCN + '头游 ' + (sc.doubleDown ? '双下 ' : '') + '+' + sc.gain + ' 级　→　我方 ' + LEVELS[M.levels.A] + ' · 对方 ' + LEVELS[M.levels.B] + '</div>');
     $('reslist').innerHTML = lines.join('');
+    // 双下提前结束：把未走完两家的手牌全部亮出来
+    const rev = $('resreveal'); rev.innerHTML = '';
+    if (sc.doubleDown) {
+      for (const s of [0, 1, 2, 3].filter(x => D.hands[x].length)) {
+        const row = document.createElement('div'); row.className = 'rv-row';
+        const nm = document.createElement('span'); nm.className = 'rv-nm';
+        nm.textContent = roleName(s) + (s === 0 ? '（你）' : '') + '：';
+        row.appendChild(nm);
+        for (const c of GD.sortHand(D.hands[s], D.level)) row.appendChild(cardEl(c, 'tiny'));
+        rev.appendChild(row);
+      }
+    }
     if (M.matchWon) {
       $('resttl').textContent = (M.matchWon === teamOf(0)) ? '🎉 我方胜利（过 A）！' : '😖 对方胜利（过 A）';
       $('btnNext').textContent = '再来一整场';
