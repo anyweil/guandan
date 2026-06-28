@@ -984,7 +984,8 @@
         if (GD.powerOfCard(c, level) >= 13) dumped[e.seat] = (dumped[e.seat] || 0) + 1;
     return { acc, tier, level, opps, oppCnts, dumped,
              oppShare: (oppCards + mateCards) ? oppCards / (oppCards + mateCards) : 0,
-             oppMin: opps.length ? Math.min(...oppCnts) : 99 };
+             oppMin: opps.length ? Math.min(...oppCnts) : 99,
+             downCnt: state.hands[(seat + 1) % 4].length };   // 下家(紧邻对手)牌数：少→易顺小牌，该顶
   }
   function outsideCopies(mem, p) { return Math.max(0, deckCopies(p, mem.level) - (mem.acc[p] || 0)); }
   function outsideHigher(mem, p) { let n = 0; for (let q = p + 1; q <= 17; q++) n += outsideCopies(mem, q); return n; }
@@ -1098,8 +1099,9 @@
     }
     // 跟牌纪律（记忆驱动）：这手最小可压若压不死对手(非绝张、会被反压)、又是较大的单/对、且我方不紧迫，
     //   则跟下去多半是“白送大牌”——宁可 pass 留牌。记忆好才认得出哪些跟牌是绝张(值得跟)/哪些是白送。
+    //   例外：下家(紧邻对手)牌已不多→pass 很可能让它顺着走小牌；此时即便只剩大牌可压，也照压不让顺。
     if (best && !isControl(best.combo, mem) && best.cards.length <= 2 && best.combo.key >= FOLLOW_KEY
-        && mem.oppMin > FOLLOW_OPP && hand.length > 5) return null;
+        && mem.oppMin > FOLLOW_OPP && hand.length > 5 && mem.downCnt > DOWN_RUN) return null;
     return best;
   }
 
@@ -1129,7 +1131,8 @@
     if (oppMin <= 9) return myPlays <= 4 && highMaterial(mem) * mem.oppShare >= 5;
     return false;
   }
-  const FOLLOW_KEY = 5, FOLLOW_OPP = 3;   // 跟牌纪律阈值（修正 opponentsOf 后复式重扫确定）
+  const FOLLOW_KEY = 7, FOLLOW_OPP = 3;                       // 跟牌纪律阈值(扫参定档:既顶小牌又保记忆梯度)
+  const DOWN_RUN = 4;                                        // 下家≤此牌数→视为"很可能走小牌",即便只剩大牌也顶住不让顺
 
   // ===================== 深度搜索：PIMC（完美信息蒙特卡洛） =====================
   // 记忆 = 信念：已“记住”的出牌从牌池剔除；对每个候选出牌，采样多种可能的对手手牌、
@@ -1352,13 +1355,13 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v26';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v27';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
   // ---------- 状态 ----------
   const M = { levels: { A: 0, B: 0 }, prevRanks: null, startLevelIdx: 0,
-    diff: { 1: '中级', 2: '高级', 3: '中级' }, ais: {}, matchWon: null,
+    diff: { 1: '大师', 2: '大师', 3: '大师' }, ais: {}, matchWon: null,   // 默认大师级
     sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false,
     manualGroups: [], animSeat: null };
   let D = null;                 // 当前一局状态

@@ -7,13 +7,13 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v26';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v27';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
   // ---------- 状态 ----------
   const M = { levels: { A: 0, B: 0 }, prevRanks: null, startLevelIdx: 0,
-    diff: { 1: '中级', 2: '高级', 3: '中级' }, ais: {}, matchWon: null,
+    diff: { 1: '大师', 2: '大师', 3: '大师' }, ais: {}, matchWon: null,   // 默认大师级
     sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false,
     manualGroups: [], animSeat: null };
   let D = null;                 // 当前一局状态
