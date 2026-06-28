@@ -77,12 +77,17 @@
   .card .jlb{position:absolute;left:0;right:0;bottom:.11em;text-align:center;font-size:.2em;font-weight:800;letter-spacing:.12em}
   /* 出牌区小牌（对手出牌展示） */
   .card.mini{--cw:clamp(24px,min(5.8vw,4.6vh),48px)}
-  /* 透视手牌（玩家走完后旁观 / 双下结算亮牌） */
+  /* 透视手牌（双下结算亮牌） */
   .card.tiny{--cw:16px}
-  .seat .reveal{display:flex;flex-wrap:wrap;gap:1px;justify-content:center;max-width:132px;margin-top:3px}
   .res-reveal{margin-top:4px}
   .res-reveal .rv-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:6px}
   .res-reveal .rv-nm{font-size:12px;color:#a9c6ba;min-width:74px;text-align:left}
+  /* 旁观观战（玩家走完后，选一家把手牌展示在出牌区） */
+  .watchsel{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:8px}
+  .watchchip{padding:5px 12px;border-radius:14px;background:rgba(0,0,0,.32);border:1px solid var(--line);color:#cfe;font-size:13px;cursor:pointer}
+  .watchchip.on{background:var(--gold);color:#3a2c06;font-weight:700;border-color:var(--gold)}
+  .watchhand{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-items:center;min-height:46px}
+  .watchlbl{width:100%;text-align:center;color:#a9c6ba;font-size:12px;margin-bottom:4px}
   /* 手牌区 */
   .bottom{flex:none;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(0,0,0,.22)}
   /* 手牌区：font-size 即牌宽基准，clamp 随屏宽/屏高动态缩放，适配手机/折叠屏/平板 */
@@ -147,9 +152,9 @@
 
 <div class="table" id="tablearea">
   <!-- 座位 -->
-  <div class="seat seat-N" id="seatN"><div class="nm">对家(队友)</div><div class="sub" id="diffN">高级</div><div class="ct" id="ctN">27</div><div class="rank" id="rkN"></div><div class="reveal" id="rvN"></div></div>
-  <div class="seat seat-E" id="seatE"><div class="nm">下家(对手)</div><div class="sub" id="diffE">中级</div><div class="ct" id="ctE">27</div><div class="rank" id="rkE"></div><div class="reveal" id="rvE"></div></div>
-  <div class="seat seat-W" id="seatW"><div class="nm">上家(对手)</div><div class="sub" id="diffW">中级</div><div class="ct" id="ctW">27</div><div class="rank" id="rkW"></div><div class="reveal" id="rvW"></div></div>
+  <div class="seat seat-N" id="seatN"><div class="nm">对家(队友)</div><div class="sub" id="diffN">高级</div><div class="ct" id="ctN">27</div><div class="rank" id="rkN"></div></div>
+  <div class="seat seat-E" id="seatE"><div class="nm">下家(对手)</div><div class="sub" id="diffE">中级</div><div class="ct" id="ctE">27</div><div class="rank" id="rkE"></div></div>
+  <div class="seat seat-W" id="seatW"><div class="nm">上家(对手)</div><div class="sub" id="diffW">中级</div><div class="ct" id="ctW">27</div><div class="rank" id="rkW"></div></div>
   <div class="seat seat-S" id="seatS"><div class="nm">我</div><div class="sub">玩家</div><div class="ct" id="ctS">27</div><div class="rank" id="rkS"></div></div>
   <!-- 出牌区 -->
   <div class="play play-N" id="playN"></div>
@@ -1362,7 +1367,7 @@
   const LEVELS = GD.RANKS, DIFFS = ['入门', '中级', '高级', '大师', '宗师'];
   const SEAT_ID = { 0: 'S', 1: 'E', 2: 'N', 3: 'W' };
   const AI_DELAY = 850;        // AI 出牌节奏（更从容）
-  const APP_VERSION = 'v28';   // 版本号（与 sw.js VERSION 一起递增）
+  const APP_VERSION = 'v29';   // 版本号（与 sw.js VERSION 一起递增）
   const $ = id => document.getElementById(id);
   const next = s => (s + 1) % 4, teammate = s => (s + 2) % 4, teamOf = s => (s % 2 === 0) ? 'A' : 'B';
 
@@ -1370,7 +1375,7 @@
   const M = { levels: { A: 0, B: 0 }, prevRanks: null, startLevelIdx: 0,
     diff: { 1: '大师', 2: '大师', 3: '大师' }, ais: {}, matchWon: null,   // 默认大师级
     sortMode: 'power', auto: false, dealNo: 0, autoAI: null, deep: false,
-    manualGroups: [], animSeat: null };
+    manualGroups: [], animSeat: null, watch: 2 };   // watch=旁观观战的座位(默认对家/队友)
   let D = null;                 // 当前一局状态
   let sel = new Set();          // 选中的手牌 id
   let hint = { list: null, idx: -1, sig: '' };
@@ -1424,12 +1429,6 @@
       seat.classList.toggle('out', !D.active[s]);
     }
     $('diffN').textContent = M.diff[2]; $('diffE').textContent = M.diff[1]; $('diffW').textContent = M.diff[3];
-    // 旁观透视：玩家走完后，UI 给玩家亮出其余三家手牌（仅展示，AI 之间互不可见、决策逻辑不变）
-    const peek = D.phase === 'playing' && !D.active[0];
-    for (const s of [1, 2, 3]) {
-      const rv = $('rv' + SEAT_ID[s]); rv.innerHTML = '';
-      if (peek) for (const c of GD.sortHand(D.hands[s], D.level)) rv.appendChild(cardEl(c, 'tiny'));
-    }
     // 出牌区（仅刚出牌的那家播放滑入动画）
     for (const s of [0, 1, 2, 3]) {
       const box = $('play' + SEAT_ID[s]); box.innerHTML = '';
@@ -1442,8 +1441,10 @@
     $('mid').innerHTML = D.phase === 'playing'
       ? (D.current ? '' : '<span class="big">' + (D.turn === 0 ? '请你领出' : roleName(D.turn) + ' 领出') + '</span>')
       : '';
-    // 手牌：横排(power) / 自动理牌(grouped) / 自定义理牌(manual：用户手工抽出的竖组)
+    // 玩家走完后转入旁观：在出牌区选一家(对手/队友)看牌，默认对家(队友)
     const hand = $('hand'); hand.innerHTML = '';
+    if (D.phase === 'playing' && !D.active[0]) { renderWatch(hand); updateControls(); return; }
+    // 手牌：横排(power) / 自动理牌(grouped) / 自定义理牌(manual：用户手工抽出的竖组)
     const manual = (M.sortMode === 'manual' && D.active[0] && M.manualGroups.length > 0);
     const grouped = (M.sortMode === 'grouped' && D.active[0]);
     hand.classList.toggle('grouped', grouped || manual);
@@ -1459,6 +1460,30 @@
       for (const c of myHandSorted()) hand.appendChild(mkCard(c));
     }
     updateControls();
+  }
+
+  // 旁观观战：玩家走完后，选一家(对手/队友)把手牌摊在出牌区。纯展示，AI 之间互不可见、决策不变。
+  function renderWatch(hand) {
+    hand.classList.remove('grouped');
+    if (!D.active[M.watch]) {                       // 当前观战对象已走完→自动切到还在场的一家(默认对家优先)
+      const alive = [2, 1, 3].filter(s => D.active[s]);
+      if (alive.length) M.watch = alive[0];
+    }
+    const selBar = document.createElement('div'); selBar.className = 'watchsel';
+    for (const s of [1, 2, 3]) {
+      const chip = document.createElement('button');
+      chip.className = 'watchchip' + (s === M.watch ? ' on' : '');
+      chip.textContent = roleName(s) + (teamOf(s) === teamOf(0) ? '·队友' : '·对手') + ' ' + D.hands[s].length;
+      chip.addEventListener('click', () => { M.watch = s; render(); });
+      selBar.appendChild(chip);
+    }
+    hand.appendChild(selBar);
+    const lbl = document.createElement('div'); lbl.className = 'watchlbl';
+    lbl.textContent = '👁 观战 ' + roleName(M.watch) + '（' + D.hands[M.watch].length + ' 张）';
+    const row = document.createElement('div'); row.className = 'watchhand';
+    row.appendChild(lbl);
+    for (const c of GD.sortHand(D.hands[M.watch], D.level)) row.appendChild(cardEl(c, 'mini'));
+    hand.appendChild(row);
   }
 
   function updateControls() {
